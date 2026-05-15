@@ -1,0 +1,157 @@
+import axios, { type AxiosInstance } from 'axios';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+const api: AxiosInstance = axios.create({
+  baseURL: `${API_URL}/api/v1`,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+export interface ProjectCreate {
+  name: string;
+  user_requirement: string;
+  goal?: string;
+  tech_stack?: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  user_requirement: string;
+  goal: string | null;
+  tech_stack: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Task {
+  id: string;
+  title: string;
+  status: string;
+  priority: number;
+  role: string | null;
+}
+
+export interface ProjectDetail extends Project {
+  tasks: Task[];
+  agent_runs_count: number;
+  test_runs_count: number;
+}
+
+export interface AgentRun {
+  id: string;
+  agent_name: string;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  task_id: string | null;
+}
+
+export interface TestRun {
+  id: string;
+  test_type: string;
+  command: string;
+  status: string;
+  error_log: string | null;
+  created_at: string;
+}
+
+export interface Deployment {
+  id: string;
+  environment: string;
+  preview_url: string | null;
+  status: string;
+  logs: string | null;
+  created_at: string;
+}
+
+export interface DeliveryReport {
+  id: string;
+  summary: string;
+  passed_tests: Record<string, unknown> | null;
+  failed_tests: Record<string, unknown> | null;
+  deployment_url: string | null;
+  known_issues: string | null;
+  final_status: string;
+  created_at: string;
+}
+
+export const projectsApi = {
+  create: async (data: ProjectCreate): Promise<Project> => {
+    const response = await api.post<Project>('/projects', data);
+    return response.data;
+  },
+
+  list: async (): Promise<Project[]> => {
+    const response = await api.get<Project[]>('/projects');
+    return response.data;
+  },
+
+  get: async (id: string): Promise<ProjectDetail> => {
+    const response = await api.get<ProjectDetail>(`/projects/${id}`);
+    return response.data;
+  },
+
+  start: async (id: string): Promise<{ status: string; project_id: string; job_id: string }> => {
+    const response = await api.post(`/projects/${id}/start`);
+    return response.data;
+  },
+
+  getAgentRuns: async (id: string): Promise<AgentRun[]> => {
+    const response = await api.get<AgentRun[]>(`/projects/${id}/agent-runs`);
+    return response.data;
+  },
+
+  getTestRuns: async (id: string): Promise<TestRun[]> => {
+    const response = await api.get<TestRun[]>(`/projects/${id}/test-runs`);
+    return response.data;
+  },
+
+  getDeployment: async (id: string): Promise<Deployment> => {
+    const response = await api.get<Deployment>(`/projects/${id}/deployment`);
+    return response.data;
+  },
+
+  getDeliveryReport: async (id: string): Promise<DeliveryReport> => {
+    const response = await api.get<DeliveryReport>(`/projects/${id}/delivery-report`);
+    return response.data;
+  },
+};
+
+export interface NotifyTestRequest {
+  webhook_url?: string;
+  sign_secret?: string;
+  message?: string;
+}
+
+export interface NotifyTestResponse {
+  success: boolean;
+  mode: string;
+  status_code: number;
+  error: string | null;
+  response_body: string | null;
+}
+
+export interface NotifyConfigResponse {
+  webhook_configured: boolean;
+  sign_secret_configured: boolean;
+  app_bot_configured: boolean;
+  active_mode: string;
+}
+
+export const notifyApi = {
+  test: async (data: NotifyTestRequest): Promise<NotifyTestResponse> => {
+    const response = await api.post<NotifyTestResponse>('/notify/test', data);
+    return response.data;
+  },
+
+  getConfig: async (): Promise<NotifyConfigResponse> => {
+    const response = await api.get<NotifyConfigResponse>('/notify/config');
+    return response.data;
+  },
+};
+
+export default api;

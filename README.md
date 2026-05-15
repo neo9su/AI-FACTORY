@@ -183,6 +183,40 @@ Once the backend is running, visit:
 
 ## Configuration
 
+### Feishu (飞书) Notification Integration
+
+Get real-time project updates in your Feishu/Lark group:
+
+**Quick Setup (Custom Bot Webhook):**
+
+1. In a Feishu group, go to **Settings → Bots → Add Bot → Custom Bot**
+2. Copy the Webhook URL
+3. Add to your `.env` file:
+   ```env
+   FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/your-token
+   # Optional: signature verification
+   # FEISHU_SIGN_SECRET=your-sign-secret
+   ```
+4. Restart the backend and visit `http://localhost:3000/settings` to send a test message
+
+**CLI Verification (no server needed):**
+```bash
+cd ~/autonomous-ai-factory
+python3 scripts/notify_test.py --webhook https://open.feishu.cn/...
+python3 scripts/notify_test.py --all   # Test all notification types
+```
+
+**Notification Events:**
+- 📋 Project created / stage changes
+- ✅/❌ Individual task completions
+- 🧪 Test suite results (pass/fail counts)
+- 🎉 Final delivery report with links
+- 🚧 Gatekeeper permission blocks
+
+**API Endpoints:**
+- `POST /api/v1/notify/test` — Send a test notification
+- `GET /api/v1/notify/config` — Check current configuration status
+
 ### Permission Policies
 
 Control what the AI can do through permission policies:

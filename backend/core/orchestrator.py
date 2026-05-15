@@ -350,6 +350,14 @@ class Orchestrator:
             "Automated review passed",
             AgentStatus.SUCCESS,
         )
+        # Notify that review passed
+        await self.notifier.send_stage_update(
+            self._notify_ctx(
+                project,
+                "代码审查通过 ✅，准备进入部署阶段。",
+                details={"审查结果": "自动审查通过，无严重问题"},
+            )
+        )
 
     async def _stage_deploying(
         self,
