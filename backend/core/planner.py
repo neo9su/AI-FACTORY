@@ -1,13 +1,14 @@
 """
 Planner module for requirements analysis and task generation.
 
-Uses Claude API to analyze user requirements and generate structured PRD and tasks.
+Uses Claude API (via OpenAI-compatible interface) to analyze user requirements
+and generate structured PRD and tasks.
 """
 import json
 import os
 from typing import Any
 
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
 from backend.models.project import Project, Task, TaskStatus
@@ -16,15 +17,16 @@ load_dotenv()
 
 
 class Planner:
-    """Requirements analyzer and task planner using Claude API."""
+    """Requirements analyzer and task planner using Claude API via OpenAI-compatible endpoint."""
 
     def __init__(self) -> None:
-        """Initialize planner with Anthropic client."""
+        """Initialize planner with OpenAI-compatible client."""
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY environment variable is required")
-        self.client = AsyncAnthropic(api_key=api_key)
-        self.model = "claude-sonnet-4-20250514"
+        base_url = os.getenv("OPENAI_BASE_URL", "http://10.190.0.214:8080/v1")
+        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self.model = os.getenv("LLM_MODEL", "us.anthropic.claude-sonnet-4-20250514-v1:0")
 
     async def analyze_requirements(self, project: Project) -> dict[str, Any]:
         """
@@ -57,14 +59,14 @@ Generate a structured PRD in JSON format with the following sections:
 Return ONLY valid JSON, no markdown formatting.
 """
 
-        response = await self.client.messages.create(
+        response = await self.client.chat.completions.create(
             model=self.model,
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )
 
         # Extract text content
-        prd_text = response.content[0].text
+        prd_text = response.choices[0].message.content
 
         # Parse JSON response
         try:
@@ -118,14 +120,14 @@ Create tasks in logical execution order:
 Return ONLY valid JSON array, no markdown formatting.
 """
 
-        response = await self.client.messages.create(
+        response = await self.client.chat.completions.create(
             model=self.model,
             max_tokens=8192,
             messages=[{"role": "user", "content": prompt}],
         )
 
         # Extract text content
-        tasks_text = response.content[0].text
+        tasks_text = response.choices[0].message.content
 
         # Parse JSON response
         try:
