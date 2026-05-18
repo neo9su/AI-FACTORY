@@ -3,7 +3,7 @@ import asyncio
 
 from backend.db.session import engine
 from backend.models.base import Base
-from backend.models.project import (
+from backend.models.project import (  # noqa: F401 — registers tables with Base.metadata
     AgentRun,
     CodeReview,
     Deployment,
@@ -13,6 +13,11 @@ from backend.models.project import (
     Requirements,
     Task,
     TestRun,
+)
+from backend.models.trend import (  # noqa: F401 — registers tables with Base.metadata
+    ContentProduct,
+    OpportunityReport,
+    TrendSignal,
 )
 
 
