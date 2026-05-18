@@ -136,3 +136,92 @@ async def list_products(
         select(ContentProduct).where(ContentProduct.opportunity_id == opportunity_id)
     )
     return list(result.scalars().all())
+
+
+class ProductResponse(BaseModel):
+    id: str
+    opportunity_id: str
+    product_type: str
+    title: Optional[str]
+    status: str
+    content_url: Optional[str]
+    meta: Optional[dict]
+    tts_status: Optional[str]
+    tts_audio_urls: Optional[list]
+    tts_error: Optional[str]
+    created_at: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+@router.post("/opportunities/{opportunity_id}/products/{product_id}/tts")
+async def trigger_tts(
+    opportunity_id: str,
+    product_id: str,
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """触发视频脚本配音生成"""
+    from backend.db.redis import get_redis_settings
+    import arq
+
+    # 验证产品存在且是 short_video_scripts 类型
+    result = await session.execute(
+        select(ContentProduct).where(
+            ContentProduct.id == product_id,
+            ContentProduct.opportunity_id == opportunity_id,
+        )
+    )
+    product = result.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    if product.product_type != "short_video_scripts":
+        raise HTTPException(status_code=400, detail="TTS only for short_video_scripts")
+    if product.status != "ready":
+        raise HTTPException(status_code=400, detail=f"Product not ready, status={product.status}")
+    if product.tts_status in ("generating", "ready"):
+        return {
+            "status": product.tts_status,
+            "product_id": product_id,
+            "message": "TTS already in progress or done",
+            "tts_audio_urls": product.tts_audio_urls,
+        }
+
+    # 更新状态为 pending 并入队
+    product.tts_status = "pending"
+    await session.commit()
+
+    pool = await arq.create_pool(get_redis_settings())
+    job = await pool.enqueue_job("generate_tts_audio", product_id)
+    await pool.aclose()
+
+    return {
+        "status": "queued",
+        "product_id": product_id,
+        "job_id": job.job_id if job else None,
+        "message": "TTS generation queued",
+    }
+
+
+@router.get("/opportunities/{opportunity_id}/products/{product_id}/tts")
+async def get_tts_status(
+    opportunity_id: str,
+    product_id: str,
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """查询配音状态"""
+    result = await session.execute(
+        select(ContentProduct).where(
+            ContentProduct.id == product_id,
+            ContentProduct.opportunity_id == opportunity_id,
+        )
+    )
+    product = result.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    return {
+        "product_id": product_id,
+        "tts_status": product.tts_status,
+        "tts_audio_urls": product.tts_audio_urls or [],
+        "tts_error": product.tts_error,
+    }

@@ -1,11 +1,15 @@
 """
 FastAPI application entry point for Autonomous AI Software Factory.
 """
+from __future__ import annotations
+
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from backend.api import notify, opportunities, projects, tasks, trends, ws
 from backend.db.session import engine
@@ -31,6 +35,11 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# Static files for TTS audio and other generated assets
+STATIC_DIR = Path.home() / "autonomous-ai-factory/static"
+STATIC_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # CORS middleware
 app.add_middleware(
