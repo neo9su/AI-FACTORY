@@ -1,6 +1,7 @@
 """Hunter 层"""
 from backend.core.hunter.base import BaseHunter, RawSignal
 from backend.core.hunter.healing_hunter import HealingHunter
+from backend.core.hunter.hf_hunter import HFHunter
 from backend.core.hunter.mbti_hunter import MBTIHunter
 from backend.core.hunter.producthunt_hunter import ProductHuntHunter
 from backend.core.hunter.reddit_hunter import RedditHunter
@@ -14,4 +15,5 @@ __all__ = [
     "MBTIHunter",
     "HealingHunter",
     "SideHustleHunter",
+    "HFHunter",
 ]

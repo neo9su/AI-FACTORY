@@ -35,6 +35,34 @@ async def run_trend_scan(ctx: dict[str, Any], sources: list[str] | None = None) 
         all_signals.extend(signals)
         logger.info(f"[TrendScan] Fetched {len(signals)} signals from Reddit")
 
+    if "reddit_mbti" in sources or "all" in sources:
+        from backend.core.hunter.mbti_hunter import MBTIHunter
+
+        signals = await MBTIHunter().hunt(limit=10)
+        all_signals.extend(signals)
+        logger.info(f"[TrendScan] Fetched {len(signals)} signals from MBTIHunter")
+
+    if "reddit_healing" in sources or "all" in sources:
+        from backend.core.hunter.healing_hunter import HealingHunter
+
+        signals = await HealingHunter().hunt(limit=10)
+        all_signals.extend(signals)
+        logger.info(f"[TrendScan] Fetched {len(signals)} signals from HealingHunter")
+
+    if "reddit_sidehustle" in sources or "all" in sources:
+        from backend.core.hunter.sidehustle_hunter import SideHustleHunter
+
+        signals = await SideHustleHunter().hunt(limit=10)
+        all_signals.extend(signals)
+        logger.info(f"[TrendScan] Fetched {len(signals)} signals from SideHustleHunter")
+
+    if "huggingface" in sources or "all" in sources:
+        from backend.core.hunter.hf_hunter import HFHunter
+
+        signals = await HFHunter().hunt(limit=10)
+        all_signals.extend(signals)
+        logger.info(f"[TrendScan] Fetched {len(signals)} signals from HFHunter")
+
     if not all_signals:
         logger.warning("[TrendScan] No signals fetched")
         return {"scanned": 0, "opportunities_generated": 0}
