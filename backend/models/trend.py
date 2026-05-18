@@ -1,7 +1,9 @@
 """SQLAlchemy ORM models for NeuroTrend — trend signals, opportunity reports, content products."""
+from __future__ import annotations
+
 from typing import Optional
 
-from sqlalchemy import JSON, Boolean, Float, ForeignKey, String, Text
+from sqlalchemy import JSON, Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.base import Base, TimestampMixin, UUIDMixin
@@ -47,6 +49,11 @@ class OpportunityReport(UUIDMixin, TimestampMixin, Base):
     automation_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     seo_value: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     lifecycle: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    hook_lines: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # 营销文案钩子
+    content_angles: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # 内容切入角度
+    monetization_strategy: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # 变现策略
+    action_plan: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # 行动计划
+    audience_profile: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 受众画像
 
     # Relationships
     trend_signal: Mapped[Optional["TrendSignal"]] = relationship(
@@ -75,3 +82,16 @@ class ContentProduct(UUIDMixin, TimestampMixin, Base):
     opportunity: Mapped["OpportunityReport"] = relationship(
         "OpportunityReport", back_populates="products"
     )
+
+
+class TrendScanJob(UUIDMixin, TimestampMixin, Base):
+    """跟踪异步趋势扫描任务状态"""
+
+    __tablename__ = "trend_scan_jobs"
+
+    status: Mapped[str] = mapped_column(String(32), default="queued", nullable=False)  # queued|running|done|failed
+    sources: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    result: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    error_msg: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    scanned_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    opportunities_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

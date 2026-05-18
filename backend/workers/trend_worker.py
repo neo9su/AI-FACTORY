@@ -100,6 +100,11 @@ async def run_trend_scan(ctx: dict[str, Any], sources: list[str] | None = None) 
                 automation_score=float(products[0].get("automation_score", 0)) if products else 0.0,
                 seo_value=market.get("seo_value"),
                 lifecycle=market.get("lifecycle"),
+                hook_lines=opportunity.get("hook_lines", []),
+                content_angles=opportunity.get("content_angles", []),
+                monetization_strategy=opportunity.get("monetization_strategy"),
+                action_plan=opportunity.get("action_plan"),
+                audience_profile=opportunity.get("audience_profile", ""),
             )
             session.add(report)
             opportunities_generated += 1
@@ -177,6 +182,11 @@ async def analyze_single_trend(ctx: dict[str, Any], trend_signal_id: str) -> dic
             automation_score=float(products[0].get("automation_score", 0)) if products else 0.0,
             seo_value=market.get("seo_value"),
             lifecycle=market.get("lifecycle"),
+            hook_lines=opportunity.get("hook_lines", []),
+            content_angles=opportunity.get("content_angles", []),
+            monetization_strategy=opportunity.get("monetization_strategy"),
+            action_plan=opportunity.get("action_plan"),
+            audience_profile=opportunity.get("audience_profile", ""),
         )
         session.add(report)
         await session.commit()
