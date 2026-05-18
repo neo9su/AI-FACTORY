@@ -12,6 +12,18 @@ export interface ProductSuggestion {
   composite_score?: number
 }
 
+export interface MonetizationStrategy {
+  quick_win: string
+  mid_term: string
+  long_term: string
+}
+
+export interface ActionPlan {
+  day1: string
+  week1: string
+  month1: string
+}
+
 export interface OpportunityReport {
   id: string
   topic: string
@@ -25,6 +37,11 @@ export interface OpportunityReport {
   automation_score: number
   seo_value: string | null
   lifecycle: string | null
+  hook_lines?: string[]
+  content_angles?: string[]
+  monetization_strategy?: MonetizationStrategy
+  action_plan?: ActionPlan
+  audience_profile?: string
 }
 
 export interface TrendScanRequest {
@@ -37,6 +54,16 @@ export interface TrendScanResponse {
   status?: string
   opportunities?: OpportunityReport[]
   message?: string
+}
+
+export interface TrendScanJob {
+  job_id: string
+  status: 'queued' | 'running' | 'done' | 'failed'
+  sources: string[]
+  scanned_count: number
+  opportunities_count: number
+  error_msg: string | null
+  created_at: string
 }
 
 export const EMOTION_COLORS: Record<string, string> = {

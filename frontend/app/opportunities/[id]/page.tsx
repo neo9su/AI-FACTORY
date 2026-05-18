@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import api from '@/lib/api';
@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import {
   type OpportunityReport,
   type ProductSuggestion,
+  type ActionPlan,
   EMOTION_COLORS,
 } from '@/types/neurotrend';
 
@@ -109,6 +110,90 @@ function ProductCard({ product }: { product: ProductSuggestion }) {
           ⭐ 综合分 {product.composite_score.toFixed(1)}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------- Hook Lines 卡片 ----------
+function HookLinesCard({ lines }: { lines: string[] }) {
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+
+  const handleCopy = useCallback((text: string, idx: number) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedIdx(idx);
+      setTimeout(() => setCopiedIdx(null), 1500);
+    });
+  }, []);
+
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-3">
+      <h2 className="text-xs font-semibold text-fuchsia-400 uppercase tracking-widest">
+        🪡 营销文案钩子
+      </h2>
+      <ul className="space-y-2">
+        {lines.map((line, idx) => (
+          <li
+            key={idx}
+            className="flex items-start gap-3 group"
+          >
+            <span className="flex-shrink-0 text-fuchsia-400 text-xs mt-0.5 font-bold">
+              {String(idx + 1).padStart(2, '0')}
+            </span>
+            <p className="flex-1 text-sm text-gray-200 leading-relaxed">{line}</p>
+            <button
+              onClick={() => handleCopy(line, idx)}
+              className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-xs px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white/70 hover:text-white"
+              title="复制"
+            >
+              {copiedIdx === idx ? '✓ 已复制' : '复制'}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// ---------- 受众画像卡片 ----------
+function AudienceProfileCard({ profile }: { profile: string }) {
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-3">
+      <h2 className="text-xs font-semibold text-cyan-400 uppercase tracking-widest">
+        🎯 目标受众
+      </h2>
+      <p className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap">
+        {profile}
+      </p>
+    </div>
+  );
+}
+
+// ---------- 行动计划卡片 ----------
+function ActionPlanCard({ plan }: { plan: ActionPlan }) {
+  const steps = [
+    { label: 'Day 1', desc: plan.day1, color: 'border-yellow-500/40 bg-yellow-500/10 text-yellow-300' },
+    { label: 'Week 1', desc: plan.week1, color: 'border-blue-500/40 bg-blue-500/10 text-blue-300' },
+    { label: 'Month 1', desc: plan.month1, color: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' },
+  ];
+
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-4">
+      <h2 className="text-xs font-semibold text-amber-400 uppercase tracking-widest">
+        🗓 行动计划
+      </h2>
+      <div className="grid sm:grid-cols-3 gap-4">
+        {steps.map((step) => (
+          <div
+            key={step.label}
+            className={`rounded-xl border p-4 space-y-2 ${step.color}`}
+          >
+            <span className="text-xs font-bold uppercase tracking-widest opacity-80">
+              {step.label}
+            </span>
+            <p className="text-sm text-gray-200 leading-relaxed">{step.desc}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -274,6 +359,21 @@ export default function OpportunityDetailPage() {
           </h2>
           <p className="text-gray-200 leading-relaxed">{opportunity.willingness_to_pay}</p>
         </div>
+
+        {/* Hook Lines 卡片 */}
+        {opportunity.hook_lines && opportunity.hook_lines.length > 0 && (
+          <HookLinesCard lines={opportunity.hook_lines} />
+        )}
+
+        {/* 受众画像 */}
+        {opportunity.audience_profile && (
+          <AudienceProfileCard profile={opportunity.audience_profile} />
+        )}
+
+        {/* 行动计划 */}
+        {opportunity.action_plan && (
+          <ActionPlanCard plan={opportunity.action_plan} />
+        )}
 
         {/* Product suggestions */}
         <div className="space-y-4">
