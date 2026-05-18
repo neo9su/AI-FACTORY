@@ -7,7 +7,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api import notify, projects, tasks, ws
+from backend.api import notify, opportunities, projects, tasks, trends, ws
 from backend.db.session import engine
 from backend.models.base import Base
 
@@ -46,6 +46,8 @@ app.include_router(projects.router, prefix="/api/v1", tags=["projects"])
 app.include_router(tasks.router, prefix="/api/v1", tags=["tasks"])
 app.include_router(notify.router, prefix="/api/v1", tags=["notifications"])
 app.include_router(ws.router, tags=["websocket"])
+app.include_router(trends.router, prefix="/api/v1", tags=["trends"])
+app.include_router(opportunities.router, prefix="/api/v1", tags=["opportunities"])
 
 
 @app.get("/health")
