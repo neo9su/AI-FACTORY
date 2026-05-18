@@ -149,4 +149,12 @@ export interface ContentProduct {
   content_url: string | null
   meta: EbookMeta | PersonalityTestMeta | VideoScriptMeta | null
   created_at: string
+  tts_status?: 'pending' | 'generating' | 'ready' | 'failed' | null
+  tts_audio_urls?: Array<{
+    script_id: number
+    script_title: string
+    url: string
+    lines_count: number
+  }> | null
+  tts_error?: string | null
 }

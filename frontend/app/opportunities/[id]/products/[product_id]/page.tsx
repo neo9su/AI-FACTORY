@@ -10,6 +10,7 @@ import {
   type PersonalityTestMeta,
   type VideoScriptMeta,
 } from '@/types/neurotrend';
+import TTSPlayer from '@/components/tts-player';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -267,7 +268,19 @@ function ViralPotentialBar({ value }: { value: number }) {
   );
 }
 
-function VideoScriptsViewer({ meta }: { meta: VideoScriptMeta }) {
+function VideoScriptsViewer({
+  meta,
+  opportunityId,
+  productId,
+  ttsStatus,
+  ttsAudioUrls,
+}: {
+  meta: VideoScriptMeta
+  opportunityId: string
+  productId: string
+  ttsStatus?: string | null
+  ttsAudioUrls?: Array<{ script_id: number; script_title: string; url: string; lines_count: number }> | null
+}) {
   return (
     <div className="space-y-6">
       {/* Series concept */}
@@ -279,6 +292,14 @@ function VideoScriptsViewer({ meta }: { meta: VideoScriptMeta }) {
           共 {meta.scripts_count} 条脚本
         </div>
       </Card>
+
+      {/* TTS Player */}
+      <TTSPlayer
+        opportunityId={opportunityId}
+        productId={productId}
+        initialTtsStatus={ttsStatus}
+        initialAudioUrls={ttsAudioUrls}
+      />
 
       {/* Script cards */}
       <div className="space-y-5">
@@ -493,7 +514,13 @@ export default function ProductDetailPage() {
           <PersonalityTestViewer meta={meta as PersonalityTestMeta} />
         )}
         {meta.product_type === 'short_video_scripts' && (
-          <VideoScriptsViewer meta={meta as VideoScriptMeta} />
+          <VideoScriptsViewer
+            meta={meta as VideoScriptMeta}
+            opportunityId={opportunityId}
+            productId={productId}
+            ttsStatus={product.tts_status}
+            ttsAudioUrls={product.tts_audio_urls}
+          />
         )}
       </div>
     </div>
