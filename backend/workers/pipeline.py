@@ -14,6 +14,7 @@ from sqlalchemy import select
 from backend.core.orchestrator import Orchestrator
 from backend.db.session import AsyncSessionLocal
 from backend.models.project import Project
+from backend.workers.trend_worker import analyze_single_trend, run_trend_scan
 
 load_dotenv()
 
@@ -130,6 +131,8 @@ class WorkerSettings:
     functions = [
         run_project_pipeline,
         run_single_stage,
+        run_trend_scan,
+        analyze_single_trend,
     ]
 
     max_jobs = 10
