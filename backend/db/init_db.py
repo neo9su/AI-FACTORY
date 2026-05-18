@@ -17,6 +17,7 @@ from backend.models.project import (  # noqa: F401 — registers tables with Bas
 from backend.models.trend import (  # noqa: F401 — registers tables with Base.metadata
     ContentProduct,
     OpportunityReport,
+    TrendScanJob,
     TrendSignal,
 )
 
