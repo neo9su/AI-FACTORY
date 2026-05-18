@@ -1,6 +1,9 @@
 """Opportunities API — 商机报告管理"""
+from __future__ import annotations
+
 from typing import Optional
 
+import arq
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import desc, select
@@ -71,8 +74,10 @@ async def generate_product(
     request: GenerateProductRequest,
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """根据商机报告生成内容产品"""
-    # 验证商机存在
+    """Enqueue content product generation via ARQ worker"""
+    from backend.workers.pipeline import WorkerSettings
+
+    # 获取商机报告
     result = await session.execute(
         select(OpportunityReport).where(OpportunityReport.id == opportunity_id)
     )
@@ -80,12 +85,44 @@ async def generate_product(
     if not report:
         raise HTTPException(status_code=404, detail="Opportunity report not found")
 
-    # TODO: Phase 3 Factory 实现后接入
+    # 创建 ContentProduct 记录
+    product = ContentProduct(
+        opportunity_id=opportunity_id,
+        product_type=request.product_type,
+        status="pending",
+    )
+    session.add(product)
+    await session.commit()
+    await session.refresh(product)
+
+    # 将 opportunity 转为 dict
+    opp_data = {
+        "topic": report.topic,
+        "core_emotions": report.core_emotions,
+        "core_pain_points": report.core_pain_points,
+        "willingness_to_pay": report.willingness_to_pay,
+        "audience_profile": report.audience_profile,
+        "hook_lines": report.hook_lines,
+        "viral_formula": (report.monetization_strategy or {}).get("viral_formula", ""),
+        "identity_factor": "",
+    }
+
+    # 入队 ARQ
+    redis = await arq.create_pool(WorkerSettings.redis_settings)
+    job = await redis.enqueue_job(
+        "generate_content_product",
+        product_id=str(product.id),
+        opportunity_data=opp_data,
+        product_type=request.product_type,
+    )
+    await redis.aclose()
+
     return {
         "status": "queued",
-        "opportunity_id": opportunity_id,
+        "product_id": str(product.id),
+        "job_id": job.job_id if job else None,
         "product_type": request.product_type,
-        "message": f"Product generation queued: {request.product_type}",
+        "message": f"{request.product_type} generation queued",
     }
 
 
