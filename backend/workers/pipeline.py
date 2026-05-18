@@ -16,6 +16,7 @@ from backend.db.session import AsyncSessionLocal
 from backend.models.project import Project
 from backend.workers.factory_worker import generate_content_product
 from backend.workers.trend_worker import analyze_single_trend, run_trend_scan
+from backend.workers.tts_worker import generate_tts_audio
 
 load_dotenv()
 
@@ -135,6 +136,7 @@ class WorkerSettings:
         run_trend_scan,
         analyze_single_trend,
         generate_content_product,
+        generate_tts_audio,
     ]
 
     max_jobs = 10

@@ -78,6 +78,15 @@ class ContentProduct(UUIDMixin, TimestampMixin, Base):
     content_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     meta: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
+    # TTS 配音状态
+    tts_status: Mapped[Optional[str]] = mapped_column(
+        String(32), nullable=True
+    )  # None/pending/generating/ready/failed
+    tts_audio_urls: Mapped[Optional[list]] = mapped_column(
+        JSON, nullable=True
+    )  # [{script_id: 1, url: "/static/audio/xxx.wav", duration_hint: "45s"}]
+    tts_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     # Relationships
     opportunity: Mapped["OpportunityReport"] = relationship(
         "OpportunityReport", back_populates="products"
