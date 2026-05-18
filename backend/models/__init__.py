@@ -14,9 +14,7 @@ from backend.models.trend import (
     TrendSignal,
     OpportunityReport,
     ContentProduct,
-    TrendSource,
-    EmotionType,
-    ProductType,
+    TrendScanJob,
 )
 
 __all__ = [
@@ -34,8 +32,5 @@ __all__ = [
     "TrendSignal",
     "OpportunityReport",
     "ContentProduct",
-    # NeuroTrend enums
-    "TrendSource",
-    "EmotionType",
-    "ProductType",
+    "TrendScanJob",
 ]
