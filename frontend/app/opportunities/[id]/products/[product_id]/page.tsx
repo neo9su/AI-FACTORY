@@ -11,6 +11,7 @@ import {
   type VideoScriptMeta,
 } from '@/types/neurotrend';
 import TTSPlayer from '@/components/tts-player';
+import { useEngagement } from '@/lib/useEngagement';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -414,6 +415,7 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState<ContentProduct | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { trackView } = useEngagement();
 
   useEffect(() => {
     api
@@ -429,6 +431,14 @@ export default function ProductDetailPage() {
       .catch((e) => setError(e instanceof Error ? e.message : '加载失败'))
       .finally(() => setLoading(false));
   }, [opportunityId, productId]);
+
+  // Track view on mount once product is loaded
+  useEffect(() => {
+    if (product?.id) {
+      trackView(product.id, opportunityId, { referrer: document.referrer });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product?.id]);
 
   if (loading) {
     return (

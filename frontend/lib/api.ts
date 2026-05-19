@@ -1,4 +1,5 @@
 import axios, { type AxiosInstance } from 'axios';
+import type { TopOpportunityItem, ProductStatsResponse } from '@/types/neurotrend';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -151,6 +152,47 @@ export const notifyApi = {
   getConfig: async (): Promise<NotifyConfigResponse> => {
     const response = await api.get<NotifyConfigResponse>('/notify/config');
     return response.data;
+  },
+};
+
+// ─── Phase 5-A: Analytics API ────────────────────────────────────────────────
+
+export const analyticsApi = {
+  /**
+   * Fire-and-forget engagement event log.
+   * Uses a silent best-effort approach — ignores errors to avoid
+   * blocking UI interactions.
+   */
+  logEvent: async (
+    productId: string,
+    eventType: 'view' | 'audio_play' | 'ebook_download' | 'test_complete',
+    sessionId?: string,
+    metadata?: Record<string, unknown>,
+  ): Promise<void> => {
+    try {
+      await api.post('/events', {
+        product_id: productId,
+        event_type: eventType,
+        session_id: sessionId,
+        metadata,
+      });
+    } catch {
+      // intentionally silent — tracking failure must never break UX
+    }
+  },
+
+  getTopOpportunities: async (limit = 20): Promise<TopOpportunityItem[]> => {
+    const res = await api.get<TopOpportunityItem[]>(
+      `/analytics/top-opportunities?limit=${limit}`,
+    );
+    return res.data;
+  },
+
+  getProductStats: async (productId: string): Promise<ProductStatsResponse> => {
+    const res = await api.get<ProductStatsResponse>(
+      `/analytics/products/${productId}/stats`,
+    );
+    return res.data;
   },
 };
 

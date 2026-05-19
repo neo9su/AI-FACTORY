@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from backend.api import notify, opportunities, projects, tasks, trends, ws
+from backend.api import analytics, notify, opportunities, projects, tasks, trends, ws
 from backend.db.session import engine
 from backend.models.base import Base
 
@@ -57,6 +57,7 @@ app.include_router(notify.router, prefix="/api/v1", tags=["notifications"])
 app.include_router(ws.router, tags=["websocket"])
 app.include_router(trends.router, prefix="/api/v1", tags=["trends"])
 app.include_router(opportunities.router, prefix="/api/v1", tags=["opportunities"])
+app.include_router(analytics.router, prefix="/api/v1", tags=["analytics"])
 
 
 @app.get("/health")

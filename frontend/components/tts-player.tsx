@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useEngagement } from '@/lib/useEngagement'
 
 interface AudioEntry {
   script_id: number
@@ -27,6 +28,7 @@ export default function TTSPlayer({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const pollRef = useRef<NodeJS.Timeout | null>(null)
+  const { trackPlay } = useEngagement()
 
   const BASE = `/api/v1/opportunities/${opportunityId}/products/${productId}/tts`
 
@@ -89,7 +91,12 @@ export default function TTSPlayer({
               </span>
               <span className="text-xs text-slate-500">{entry.lines_count} 段旁白</span>
             </div>
-            <audio controls src={entry.url} className="w-full h-10 accent-indigo-500" />
+            <audio
+                controls
+                src={entry.url}
+                className="w-full h-10 accent-indigo-500"
+                onPlay={() => trackPlay(productId, opportunityId, { script_id: entry.script_id })}
+              />
           </div>
         ))}
         <button

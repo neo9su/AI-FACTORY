@@ -6,6 +6,7 @@ Workers handle long-running pipeline stages asynchronously.
 import os
 from typing import Any
 
+import arq
 from arq import create_pool
 from arq.connections import RedisSettings
 from dotenv import load_dotenv
@@ -15,6 +16,7 @@ from backend.core.orchestrator import Orchestrator
 from backend.db.session import AsyncSessionLocal
 from backend.models.project import Project
 from backend.workers.factory_worker import generate_content_product
+from backend.workers.score_worker import recalculate_scores
 from backend.workers.trend_worker import analyze_single_trend, run_trend_scan
 from backend.workers.tts_worker import generate_tts_audio
 
@@ -137,6 +139,11 @@ class WorkerSettings:
         analyze_single_trend,
         generate_content_product,
         generate_tts_audio,
+        recalculate_scores,
+    ]
+
+    cron_jobs = [
+        arq.cron(recalculate_scores, hour=None, minute=0),  # every hour at :00
     ]
 
     max_jobs = 10

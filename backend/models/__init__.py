@@ -16,6 +16,10 @@ from backend.models.trend import (
     ContentProduct,
     TrendScanJob,
 )
+from backend.models.engagement import (
+    ProductEngagement,
+    OpportunityScore,
+)
 
 __all__ = [
     # project models
@@ -33,4 +37,7 @@ __all__ = [
     "OpportunityReport",
     "ContentProduct",
     "TrendScanJob",
+    # Phase 5-A: engagement models
+    "ProductEngagement",
+    "OpportunityScore",
 ]

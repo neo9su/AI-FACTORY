@@ -6,6 +6,8 @@ from typing import Optional
 from sqlalchemy import JSON, Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+# TYPE_CHECKING imports avoided — string-based forward refs used instead
+
 from backend.models.base import Base, TimestampMixin, UUIDMixin
 
 
@@ -62,6 +64,12 @@ class OpportunityReport(UUIDMixin, TimestampMixin, Base):
     products: Mapped[list["ContentProduct"]] = relationship(
         "ContentProduct", back_populates="opportunity", cascade="all, delete-orphan"
     )
+    score: Mapped[Optional["OpportunityScore"]] = relationship(
+        "OpportunityScore",
+        back_populates="opportunity",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
 
 class ContentProduct(UUIDMixin, TimestampMixin, Base):
@@ -90,6 +98,9 @@ class ContentProduct(UUIDMixin, TimestampMixin, Base):
     # Relationships
     opportunity: Mapped["OpportunityReport"] = relationship(
         "OpportunityReport", back_populates="products"
+    )
+    engagements: Mapped[list["ProductEngagement"]] = relationship(
+        "ProductEngagement", back_populates="product", cascade="all, delete-orphan"
     )
 
 

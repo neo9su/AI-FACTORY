@@ -20,6 +20,10 @@ from backend.models.trend import (  # noqa: F401 — registers tables with Base.
     TrendScanJob,
     TrendSignal,
 )
+from backend.models.engagement import (  # noqa: F401 — registers tables with Base.metadata
+    ProductEngagement,
+    OpportunityScore,
+)
 
 
 async def init_db() -> None:

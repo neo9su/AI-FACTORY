@@ -158,3 +158,45 @@ export interface ContentProduct {
   }> | null
   tts_error?: string | null
 }
+
+// ─── Phase 5-A: Analytics Types ──────────────────────────────────────────────
+
+export type EngagementEventType =
+  | 'view'
+  | 'audio_play'
+  | 'ebook_download'
+  | 'test_complete'
+
+export interface LogEventRequest {
+  product_id: string
+  event_type: EngagementEventType
+  session_id?: string
+  metadata?: Record<string, unknown>
+}
+
+export interface TopOpportunityItem {
+  opportunity_id: string
+  topic: string
+  roi_score: number
+  engagement_score: number // 0–10 normalized
+  composite_score: number // ranked score
+  total_views: number
+  total_plays: number
+  total_downloads: number
+  total_test_completes: number
+  engagement_boost: number
+  product_count: number
+}
+
+export interface ProductStatsResponse {
+  product_id: string
+  product_type: string
+  title: string | null
+  total_views: number
+  total_audio_plays: number
+  total_ebook_downloads: number
+  total_test_completes: number
+  total_events: number
+  breakdown: Record<string, number>
+}
+

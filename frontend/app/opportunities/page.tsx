@@ -293,12 +293,20 @@ export default function OpportunitiesPage() {
               分析社交趋势，挖掘高价值产品商机
             </p>
           </div>
-          <a
-            href="/"
-            className="text-sm text-indigo-300 hover:text-white transition-colors"
-          >
-            ← 返回主页
-          </a>
+          <div className="flex items-center gap-4">
+            <a
+              href="/analytics"
+              className="text-sm text-amber-400 hover:text-white transition-colors font-medium"
+            >
+              📊 分析
+            </a>
+            <a
+              href="/"
+              className="text-sm text-indigo-300 hover:text-white transition-colors"
+            >
+              ← 返回主页
+            </a>
+          </div>
         </div>
       </div>
 
