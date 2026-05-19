@@ -1,12 +1,13 @@
 """SQLAlchemy ORM models for NeuroTrend — trend signals, opportunity reports, content products."""
 from __future__ import annotations
 
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import JSON, Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-# TYPE_CHECKING imports avoided — string-based forward refs used instead
+if TYPE_CHECKING:
+    from backend.models.engagement import OpportunityScore, ProductEngagement  # noqa: F401
 
 from backend.models.base import Base, TimestampMixin, UUIDMixin
 

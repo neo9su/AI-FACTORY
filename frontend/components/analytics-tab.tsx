@@ -12,29 +12,11 @@ export function AnalyticsTab() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    let cancelled = false
-
-    const load = () => {
-      analyticsApi
-        .getTopOpportunities(20)
-        .then((data) => {
-          if (!cancelled) setItems(data)
-        })
-        .catch((e: unknown) => {
-          if (!cancelled) setError(e instanceof Error ? e.message : '加载失败')
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false)
-        })
-    }
-
-    load()
-    // Refresh every 30 seconds
-    const timer = setInterval(load, 30_000)
-    return () => {
-      cancelled = true
-      clearInterval(timer)
-    }
+    analyticsApi
+      .getTopOpportunities(20)
+      .then(setItems)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false))
   }, [])
 
   if (loading) {
@@ -46,7 +28,9 @@ export function AnalyticsTab() {
   }
 
   if (error) {
-    return <div className="text-red-400 text-sm text-center py-12">⚠ {error}</div>
+    return (
+      <div className="text-red-400 text-sm text-center py-12">⚠ {error}</div>
+    )
   }
 
   if (items.length === 0) {
@@ -58,9 +42,12 @@ export function AnalyticsTab() {
     )
   }
 
-  // max composite_score for relative bar sizing
+  // max values for relative bar sizing
   const maxComposite = Math.max(...items.map((i) => i.composite_score), 1)
   const maxViews = Math.max(...items.map((i) => i.total_views), 1)
+  const maxPlays = Math.max(...items.map((i) => i.total_plays), 1)
+  const maxDownloads = Math.max(...items.map((i) => i.total_downloads), 1)
+  const maxTests = Math.max(...items.map((i) => i.total_test_completes), 1)
 
   return (
     <div className="space-y-4">
@@ -81,7 +68,9 @@ export function AnalyticsTab() {
           {/* Row summary */}
           <div className="grid grid-cols-12 gap-2 items-center mb-3">
             <div className="col-span-4 flex items-center gap-2 min-w-0">
-              <span className="text-white/30 text-sm font-bold w-5 shrink-0">#{idx + 1}</span>
+              <span className="text-white/30 text-sm font-bold w-5 shrink-0">
+                #{idx + 1}
+              </span>
               <Link
                 href={`/opportunities/${item.opportunity_id}`}
                 className="text-sm font-semibold text-white hover:text-indigo-300 transition-colors line-clamp-2"
@@ -95,7 +84,9 @@ export function AnalyticsTab() {
               </span>
             </div>
             <div className="col-span-2 text-right">
-              <span className="text-indigo-300 text-sm">{item.roi_score.toFixed(1)}</span>
+              <span className="text-indigo-300 text-sm">
+                {item.roi_score.toFixed(1)}
+              </span>
             </div>
             <div className="col-span-2 text-right">
               <span className="text-amber-400 text-sm">
@@ -130,21 +121,21 @@ export function AnalyticsTab() {
             <EngagementBar
               label="试听"
               value={item.total_plays}
-              maxValue={Math.max(...items.map((i) => i.total_plays), 1)}
+              maxValue={maxPlays}
               colorClass="bg-purple-500"
               icon="🎵"
             />
             <EngagementBar
               label="下载"
               value={item.total_downloads}
-              maxValue={Math.max(...items.map((i) => i.total_downloads), 1)}
+              maxValue={maxDownloads}
               colorClass="bg-amber-500"
               icon="📥"
             />
             <EngagementBar
               label="测试完成"
               value={item.total_test_completes}
-              maxValue={Math.max(...items.map((i) => i.total_test_completes), 1)}
+              maxValue={maxTests}
               colorClass="bg-rose-500"
               icon="✅"
             />
@@ -152,7 +143,8 @@ export function AnalyticsTab() {
 
           {/* Product count badge */}
           <div className="mt-2 text-xs text-white/30">
-            {item.product_count} 个内容产品 · 参与度加成 +{item.engagement_boost.toFixed(2)}
+            {item.product_count} 个内容产品 ·{' '}
+            参与度加成 +{item.engagement_boost.toFixed(2)}
           </div>
         </div>
       ))}
