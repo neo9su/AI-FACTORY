@@ -148,6 +148,7 @@ export interface ContentProduct {
   status: 'pending' | 'generating' | 'ready' | 'failed'
   content_url: string | null
   meta: EbookMeta | PersonalityTestMeta | VideoScriptMeta | null
+  cover_image_url: string | null
   created_at: string
   tts_status?: 'pending' | 'generating' | 'ready' | 'failed' | null
   tts_audio_urls?: Array<{

@@ -520,6 +520,17 @@ export default function ProductDetailPage() {
       </div>
 
       <div className="container mx-auto px-4 py-8 max-w-4xl">
+        {/* Cover image (SD-generated) */}
+        {product.cover_image_url && (
+          <div className="mb-8 rounded-2xl overflow-hidden border border-white/10 shadow-xl">
+            <img
+              src={product.cover_image_url}
+              alt={product.title ?? '产品封面'}
+              className="w-full h-auto max-h-[400px] object-cover"
+            />
+          </div>
+        )}
+
         {meta.product_type === 'ebook' && <EbookViewer meta={meta as EbookMeta} />}
         {meta.product_type === 'personality_test' && (
           <PersonalityTestViewer meta={meta as PersonalityTestMeta} />

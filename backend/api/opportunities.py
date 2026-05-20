@@ -47,6 +47,7 @@ class ProductResponse(BaseModel):
     tts_status: Optional[str]
     tts_audio_urls: Optional[list]
     tts_error: Optional[str]
+    cover_image_url: Optional[str]
     created_at: str
 
     model_config = ConfigDict(from_attributes=True)

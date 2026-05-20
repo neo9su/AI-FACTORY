@@ -268,9 +268,20 @@ export default function ProductsPage() {
                   key={product.id}
                   className="rounded-2xl border border-white/10 bg-white/5 px-5 py-4 flex items-center gap-4"
                 >
-                  <span className="text-2xl flex-shrink-0">
-                    {PRODUCT_TYPE_ICON[product.product_type]}
-                  </span>
+                  {/* Cover thumbnail or type icon */}
+                  {product.cover_image_url ? (
+                    <div className="flex-shrink-0 w-12 h-12 rounded-xl overflow-hidden border border-white/10">
+                      <img
+                        src={product.cover_image_url}
+                        alt={product.title ?? '封面'}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <span className="text-2xl flex-shrink-0">
+                      {PRODUCT_TYPE_ICON[product.product_type]}
+                    </span>
+                  )}
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">

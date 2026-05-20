@@ -97,6 +97,9 @@ class ContentProduct(UUIDMixin, TimestampMixin, Base):
     )  # [{script_id: 1, url: "/static/audio/xxx.wav", duration_hint: "45s"}]
     tts_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # SD 封面图
+    cover_image_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     # Relationships
     opportunity: Mapped["OpportunityReport"] = relationship(
         "OpportunityReport", back_populates="products"

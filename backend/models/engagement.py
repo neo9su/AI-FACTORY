@@ -3,8 +3,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import Float, ForeignKey, Index, Integer, String
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Float, ForeignKey, Index, Integer, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.base import Base, TimestampMixin, UUIDMixin
@@ -39,7 +38,7 @@ class ProductEngagement(UUIDMixin, TimestampMixin, Base):
         # anonymous session UUID from frontend (localStorage)
     )
     event_metadata: Mapped[Optional[dict]] = mapped_column(
-        JSONB,
+        JSON,
         nullable=True,
         # flexible payload, e.g.:
         # view       → {"referrer": "...", "page": "/opportunities/xxx"}

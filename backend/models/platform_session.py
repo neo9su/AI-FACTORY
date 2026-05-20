@@ -3,8 +3,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import String, Text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.models.base import Base, TimestampMixin, UUIDMixin
@@ -23,10 +22,10 @@ class PlatformSession(UUIDMixin, TimestampMixin, Base):
         String(32), default="pending", nullable=False
         # pending | scanning | logged_in | expired | failed
     )
-    cookies: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    cookies: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     # List of cookie dicts: [{name, value, domain, path, expires, ...}]
 
-    user_info: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    user_info: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     # Scraped user info after login: {nickname, user_id, avatar_url}
 
     qr_image_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
