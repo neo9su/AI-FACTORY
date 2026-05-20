@@ -41,10 +41,93 @@ class DouyinClient(PlatformClient):
             self._token = data["data"]["access_token"]
             return self._token
 
+    async def _get_session_cookies(self) -> list[dict] | None:
+        """Fetch most recent logged_in Douyin session cookies from DB."""
+        try:
+            from backend.db.session import AsyncSessionLocal
+            from backend.models.platform_session import PlatformSession
+            from sqlalchemy import select
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    select(PlatformSession)
+                    .where(
+                        PlatformSession.platform == self.platform_name,
+                        PlatformSession.status == "logged_in",
+                    )
+                    .order_by(PlatformSession.created_at.desc())
+                    .limit(1)
+                )
+                session = result.scalar_one_or_none()
+                if session and session.cookies:
+                    return session.cookies
+        except Exception as e:
+            logger.warning(f"[Douyin] Failed to get session cookies: {e}")
+        return None
+
+    async def _upload_with_cookies(
+        self, bundle: dict, cookies: list[dict]
+    ) -> PlatformUploadResult:
+        """Post to Douyin using saved browser cookies (fallback to bundle storage on API change)."""
+        import httpx
+        cookie_header = "; ".join(
+            f"{c['name']}={c['value']}" for c in cookies[:30]
+        )
+        headers = {
+            "Cookie": cookie_header,
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Referer": "https://www.douyin.com/",
+            "Content-Type": "application/json",
+        }
+        api_url = "https://open.douyin.com/api/douyin/v1/video/create/"
+        payload = {
+            "title": bundle.get("title", "")[:20],
+            "desc": bundle.get("caption", ""),
+            "type": "video",
+            "tag_list": [
+                {"id": "", "name": tag.lstrip("#")}
+                for tag in bundle.get("hashtags", [])[:5]
+            ],
+        }
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(api_url, json=payload, headers=headers)
+                data = resp.json() if resp.text else {}
+                if resp.status_code == 200 and data.get("success"):
+                    item_id = data.get("data", {}).get("item_id", "")
+                    return PlatformUploadResult(
+                        platform=self.platform_name,
+                        success=True,
+                        post_id=item_id,
+                        post_url=f"https://www.douyin.com/video/{item_id}",
+                        raw_response=data,
+                    )
+                else:
+                    return PlatformUploadResult(
+                        platform=self.platform_name,
+                        success=False,
+                        error=f"[Douyin] cookie upload error {resp.status_code}: {data}",
+                        raw_response=data,
+                    )
+        except Exception as e:
+            return PlatformUploadResult(
+                platform=self.platform_name, success=False, error=str(e)
+            )
+
     async def upload(self, bundle: dict[str, Any]) -> PlatformUploadResult:
+        """Upload to Douyin: try cookie-based auth first, then API key."""
+        cookies = await self._get_session_cookies()
+        if cookies:
+            return await self._upload_with_cookies(bundle, cookies)
         if not self.is_configured():
             logger.warning("[Douyin] Not configured")
-            return PlatformUploadResult(platform="douyin", success=False, error="DOUYIN_CLIENT_KEY / DOUYIN_CLIENT_SECRET / DOUYIN_OPEN_ID not set")
+            return PlatformUploadResult(
+                platform=self.platform_name,
+                success=False,
+                error="credentials not configured (no active session and no API key)",
+            )
         try:
             token = await self._get_access_token()
             hashtags = bundle.get("hashtags", [])
