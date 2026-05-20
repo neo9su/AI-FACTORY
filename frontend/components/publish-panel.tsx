@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import QRLoginModal from "./qr-login-modal";
 
 interface PublishJob {
   publish_job_id: string;
@@ -53,6 +54,14 @@ export default function PublishPanel({ productId, productStatus }: PublishPanelP
   const [jobs, setJobs] = useState<PublishJob[]>([]);
   const [triggering, setTriggering] = useState(false);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["douyin", "xiaohongshu"]);
+
+  const [showQRLogin, setShowQRLogin] = useState<"xiaohongshu" | "douyin" | null>(null);
+  const [loginSessions, setLoginSessions] = useState<Record<string, boolean>>({});
+
+  const handleLoginSuccess = (platform: string) => {
+    setLoginSessions((prev) => ({ ...prev, [platform]: true }));
+    setShowQRLogin(null);
+  };
 
   const canPublish = ["ready", "done", "completed"].includes(productStatus);
   const hasInProgress = jobs.some((j) =>
@@ -132,6 +141,34 @@ export default function PublishPanel({ productId, productStatus }: PublishPanelP
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+      {/* Platform Login Status Bar */}
+      <div className="flex gap-3 mb-6">
+        {(["xiaohongshu", "douyin"] as const).map((p) => (
+          <button
+            key={p}
+            onClick={() => setShowQRLogin(p)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+              loginSessions[p]
+                ? "bg-green-100 text-green-700 border border-green-300"
+                : "bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200"
+            }`}
+          >
+            {loginSessions[p] ? "✅" : "🔐"}{" "}
+            {p === "xiaohongshu" ? "小红书" : "抖音"}
+            {loginSessions[p] ? " 已登录" : " 扫码登录"}
+          </button>
+        ))}
+      </div>
+
+      {/* QR Login Modal */}
+      {showQRLogin && (
+        <QRLoginModal
+          platform={showQRLogin}
+          onClose={() => setShowQRLogin(null)}
+          onSuccess={handleLoginSuccess}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-800">📤 发布到平台</h3>
