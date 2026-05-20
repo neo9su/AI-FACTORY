@@ -3,6 +3,7 @@ import asyncio
 from typing import AsyncGenerator, Generator
 
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
@@ -24,7 +25,7 @@ def event_loop() -> Generator:
     loop.close()
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def test_engine():
     """Create a test database engine."""
     engine = create_async_engine(
@@ -44,7 +45,7 @@ async def test_engine():
     await engine.dispose()
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
     """Create a test database session."""
     async_session = sessionmaker(
@@ -55,7 +56,7 @@ async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """Create a test client."""
 
