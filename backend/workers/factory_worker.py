@@ -60,7 +60,34 @@ async def generate_content_product(
         else:
             raise ValueError(f"Unknown product_type: {product_type}")
 
-        # Step 3: 保存结果到 ContentProduct.meta
+        # Step 3: Generate SD cover image (best-effort, non-blocking)
+        cover_url = None
+        try:
+            from backend.core.image.sd_service import SDImageService
+            sd = SDImageService()
+            topic = opportunity_data.get("topic", "")
+            emotions = opportunity_data.get("core_emotions", [])
+            emotion_str = "、".join(emotions[:3]) if emotions else "情绪疗愈"
+            prompt = (
+                f"Chinese woman, emotional healing, {topic}, {emotion_str}, "
+                "soft lighting, portrait, cinematic, 35mm film photography"
+            )
+            cover_path = await sd.generate_cover(
+                prompt=prompt,
+                product_id=product_id,
+            )
+            if cover_path:
+                filename = cover_path.split("/")[-1] if "/" in cover_path else cover_path
+                cover_url = f"/static/images/{filename}"
+            logger.info(f"[FactoryWorker] SD cover generated: {cover_url}")
+        except Exception as cover_err:
+            logger.warning(f"[FactoryWorker] SD cover generation skipped: {cover_err}")
+
+        # Attach cover URL to content dict for downstream use
+        if cover_url and isinstance(content, dict):
+            content["cover_image_url"] = cover_url
+
+        # Step 4: 保存结果到 ContentProduct.meta
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(ContentProduct).where(ContentProduct.id == product_id)
