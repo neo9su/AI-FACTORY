@@ -11,9 +11,12 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from backend.core.publisher.platforms.base import PlatformUploadResult
 
 PLATFORM_HASHTAG_LIMITS = {
     "douyin": 5,        # 抖音 recommend 3-5 tags
@@ -211,3 +214,27 @@ class PublisherService:
         relative_url = f"/static/publish/{product_id}/{platform}/bundle.json"
         logger.info(f"[Publisher] Bundle saved to {bundle_path}")
         return relative_url
+
+    async def upload_to_platform(
+        self,
+        platform: str,
+        bundle: dict[str, Any],
+    ) -> "PlatformUploadResult":
+        """Upload a bundle to the specified platform.
+
+        Args:
+            platform: "douyin" | "xiaohongshu" | "tiktok"
+            bundle: The platform-specific bundle dict
+
+        Returns:
+            PlatformUploadResult
+        """
+        from backend.core.publisher.platforms import get_platform_client
+
+        client = get_platform_client(platform)
+        logger.info(
+            f"[Publisher] Uploading to {platform} "
+            f"(configured={client.is_configured()})"
+        )
+        result = await client.upload(bundle)
+        return result
