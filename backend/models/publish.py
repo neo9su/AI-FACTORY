@@ -26,7 +26,7 @@ class PublishJob(UUIDMixin, TimestampMixin, Base):
     )
     status: Mapped[str] = mapped_column(
         String(32), default="pending", nullable=False, index=True
-        # pending | packaging | ready | published | failed
+        # pending | packaging | ready | uploading | uploaded | upload_failed | published | failed
     )
     bundle_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # e.g. "/static/publish/<product_id>/douyin/bundle.json"
@@ -35,6 +35,13 @@ class PublishJob(UUIDMixin, TimestampMixin, Base):
     # full publish bundle: title, caption, hashtags, audio_url, cover_url, script_text
 
     error_msg: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    upload_result: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    # Result from platform upload API: {success, post_id, post_url, error, raw_response}
+
+    post_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    post_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Populated after successful platform upload
 
     # Relationship back to product
     product: Mapped["ContentProduct"] = relationship(  # noqa: F821

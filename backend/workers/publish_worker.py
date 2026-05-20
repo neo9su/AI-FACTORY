@@ -78,8 +78,44 @@ async def process_publish_job(
             await db.commit()
 
             logger.info(f"[PublishWorker] Job {publish_job_id} ready: {bundle_path}")
+
+            # --- Phase 5C: upload to platform ---
+            job.status = "uploading"
+            await db.commit()
+
+            try:
+                upload_result = await service.upload_to_platform(
+                    platform=job.platform,
+                    bundle=bundle,
+                )
+                job.upload_result = {
+                    "success": upload_result.success,
+                    "post_id": upload_result.post_id,
+                    "post_url": upload_result.post_url,
+                    "error": upload_result.error,
+                }
+                if upload_result.success:
+                    job.status = "uploaded"
+                    job.post_id = upload_result.post_id
+                    job.post_url = upload_result.post_url
+                    logger.info(
+                        f"[PublishWorker] Uploaded to {job.platform}: "
+                        f"post_id={upload_result.post_id}"
+                    )
+                else:
+                    job.status = "upload_failed"
+                    logger.warning(
+                        f"[PublishWorker] Upload to {job.platform} failed: "
+                        f"{upload_result.error}"
+                    )
+            except Exception as upload_err:
+                logger.exception(f"[PublishWorker] Upload exception: {upload_err}")
+                job.status = "upload_failed"
+                job.upload_result = {"success": False, "error": str(upload_err)}
+
+            await db.commit()
             return {
-                "status": "ready",
+                "status": job.status,
                 "publish_job_id": publish_job_id,
                 "bundle_path": bundle_path,
             }
