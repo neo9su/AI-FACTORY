@@ -19,6 +19,7 @@ from backend.workers.factory_worker import generate_content_product
 from backend.workers.score_worker import recalculate_scores
 from backend.workers.trend_worker import analyze_single_trend, run_trend_scan
 from backend.workers.tts_worker import generate_tts_audio
+from backend.workers.publish_worker import process_publish_job
 
 load_dotenv()
 
@@ -140,6 +141,7 @@ class WorkerSettings:
         generate_content_product,
         generate_tts_audio,
         recalculate_scores,
+        process_publish_job,  # Phase 5-B
     ]
 
     cron_jobs = [
