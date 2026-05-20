@@ -31,6 +31,9 @@ class PublishStatusResponse(BaseModel):
     status: str
     bundle_path: Optional[str] = None
     bundle_data: Optional[dict] = None
+    upload_result: Optional[dict] = None
+    post_id: Optional[str] = None
+    post_url: Optional[str] = None
     error_msg: Optional[str] = None
     created_at: str
 
@@ -142,6 +145,9 @@ async def get_publish_jobs(
             status=j.status,
             bundle_path=j.bundle_path,
             bundle_data=j.bundle_data,
+            upload_result=j.upload_result,
+            post_id=j.post_id,
+            post_url=j.post_url,
             error_msg=j.error_msg,
             created_at=j.created_at.isoformat(),
         )
@@ -171,6 +177,9 @@ async def get_publish_job(
         status=job.status,
         bundle_path=job.bundle_path,
         bundle_data=job.bundle_data,
+        upload_result=job.upload_result,
+        post_id=job.post_id,
+        post_url=job.post_url,
         error_msg=job.error_msg,
         created_at=job.created_at.isoformat(),
     )
@@ -200,3 +209,36 @@ async def mark_as_published(
     job.status = "published"
     await db.commit()
     return {"status": "published", "publish_job_id": job_id}
+
+
+@router.post("/publish/job/{job_id}/retry-upload")
+async def retry_upload(
+    job_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """Re-queue an upload_failed job for platform upload retry."""
+    import os
+    from backend.models.publish import PublishJob
+
+    result = await db.execute(select(PublishJob).where(PublishJob.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Publish job not found")
+
+    if job.status not in ("upload_failed", "ready"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job must be in 'upload_failed' or 'ready' state (current: {job.status})",
+        )
+
+    redis_settings = RedisSettings(
+        host=os.getenv("REDIS_HOST", "localhost"),
+        port=int(os.getenv("REDIS_PORT", "6379")),
+    )
+    redis = await arq.create_pool(redis_settings)
+    job.status = "pending"
+    await db.commit()
+    await redis.enqueue_job("process_publish_job", str(job.id))
+    await redis.aclose()
+
+    return {"status": "pending", "publish_job_id": job_id}
