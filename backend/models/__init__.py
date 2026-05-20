@@ -21,6 +21,7 @@ from backend.models.engagement import (
     OpportunityScore,
 )
 from backend.models.publish import PublishJob  # noqa: F401
+from backend.models.platform_session import PlatformSession  # noqa: F401
 
 __all__ = [
     # project models
@@ -43,4 +44,6 @@ __all__ = [
     "OpportunityScore",
     # Phase 5-B: publish models
     "PublishJob",
+    # Phase 5-D: platform session models
+    "PlatformSession",
 ]
