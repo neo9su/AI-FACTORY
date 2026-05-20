@@ -11,6 +11,7 @@ import {
   type VideoScriptMeta,
 } from '@/types/neurotrend';
 import TTSPlayer from '@/components/tts-player';
+import PublishPanel from '@/components/publish-panel';
 import { useEngagement } from '@/lib/useEngagement';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -532,6 +533,11 @@ export default function ProductDetailPage() {
             ttsAudioUrls={product.tts_audio_urls}
           />
         )}
+
+        {/* Phase 5-B: Publish Panel */}
+        <div className="mt-8">
+          <PublishPanel productId={productId} productStatus={product.status} />
+        </div>
       </div>
     </div>
   );
