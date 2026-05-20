@@ -20,6 +20,7 @@ from backend.models.engagement import (
     ProductEngagement,
     OpportunityScore,
 )
+from backend.models.publish import PublishJob  # noqa: F401
 
 __all__ = [
     # project models
@@ -40,4 +41,6 @@ __all__ = [
     # Phase 5-A: engagement models
     "ProductEngagement",
     "OpportunityScore",
+    # Phase 5-B: publish models
+    "PublishJob",
 ]
