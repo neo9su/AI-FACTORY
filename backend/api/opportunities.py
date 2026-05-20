@@ -36,12 +36,28 @@ class GenerateProductRequest(BaseModel):
     product_type: str  # ebook / personality_test / short_video / comic_drama
 
 
+class ProductResponse(BaseModel):
+    id: str
+    opportunity_id: str
+    product_type: str
+    title: Optional[str]
+    status: str
+    content_url: Optional[str]
+    meta: Optional[dict]
+    tts_status: Optional[str]
+    tts_audio_urls: Optional[list]
+    tts_error: Optional[str]
+    created_at: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 @router.get("/opportunities", response_model=list[OpportunityResponse])
 async def list_opportunities(
     min_roi: float = 0.0,
     limit: int = 20,
     session: AsyncSession = Depends(get_db),
-) -> list[OpportunityReport]:
+):
     """获取商机报告列表（按ROI排序）"""
     query = (
         select(OpportunityReport)
@@ -53,11 +69,11 @@ async def list_opportunities(
     return list(result.scalars().all())
 
 
-@router.get("/opportunities/{opportunity_id}")
+@router.get("/opportunities/{opportunity_id}", response_model=OpportunityResponse)
 async def get_opportunity(
     opportunity_id: str,
     session: AsyncSession = Depends(get_db),
-) -> OpportunityReport:
+):
     """获取商机报告详情"""
     result = await session.execute(
         select(OpportunityReport).where(OpportunityReport.id == opportunity_id)
@@ -126,32 +142,16 @@ async def generate_product(
     }
 
 
-@router.get("/opportunities/{opportunity_id}/products")
+@router.get("/opportunities/{opportunity_id}/products", response_model=list[ProductResponse])
 async def list_products(
     opportunity_id: str,
     session: AsyncSession = Depends(get_db),
-) -> list[ContentProduct]:
+):
     """获取某商机下生成的所有产品"""
     result = await session.execute(
         select(ContentProduct).where(ContentProduct.opportunity_id == opportunity_id)
     )
     return list(result.scalars().all())
-
-
-class ProductResponse(BaseModel):
-    id: str
-    opportunity_id: str
-    product_type: str
-    title: Optional[str]
-    status: str
-    content_url: Optional[str]
-    meta: Optional[dict]
-    tts_status: Optional[str]
-    tts_audio_urls: Optional[list]
-    tts_error: Optional[str]
-    created_at: str
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 @router.post("/opportunities/{opportunity_id}/products/{product_id}/tts")

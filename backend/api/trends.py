@@ -86,7 +86,7 @@ async def list_trends(
     source: Optional[str] = None,
     analyzed_only: bool = False,
     session: AsyncSession = Depends(get_db),
-) -> list[TrendSignal]:
+):
     """获取最新热点信号"""
     query = select(TrendSignal).order_by(desc(TrendSignal.engagement_score)).limit(limit)
     if source:
@@ -97,11 +97,11 @@ async def list_trends(
     return list(result.scalars().all())
 
 
-@router.get("/trends/{trend_id}")
+@router.get("/trends/{trend_id}", response_model=TrendSignalResponse)
 async def get_trend(
     trend_id: str,
     session: AsyncSession = Depends(get_db),
-) -> TrendSignal:
+):
     """获取单个热点信号详情"""
     result = await session.execute(select(TrendSignal).where(TrendSignal.id == trend_id))
     signal = result.scalar_one_or_none()
