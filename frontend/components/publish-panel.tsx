@@ -6,9 +6,12 @@ interface PublishJob {
   publish_job_id: string;
   product_id: string;
   platform: string;
-  status: string; // pending | packaging | ready | published | failed
+  status: string; // pending | packaging | ready | uploading | uploaded | upload_failed | published | failed
   bundle_path: string | null;
   bundle_data: Record<string, unknown> | null;
+  upload_result: Record<string, unknown> | null;
+  post_id: string | null;
+  post_url: string | null;
   error_msg: string | null;
   created_at: string;
 }
@@ -28,6 +31,9 @@ const STATUS_BADGE: Record<string, string> = {
   pending: "bg-yellow-100 text-yellow-800",
   packaging: "bg-blue-100 text-blue-800 animate-pulse",
   ready: "bg-green-100 text-green-800",
+  uploading: "bg-blue-100 text-blue-800 animate-pulse",
+  uploaded: "bg-purple-100 text-purple-800",
+  upload_failed: "bg-orange-100 text-orange-800",
   published: "bg-purple-100 text-purple-800",
   failed: "bg-red-100 text-red-800",
 };
@@ -36,6 +42,9 @@ const STATUS_LABEL: Record<string, string> = {
   pending: "等待中",
   packaging: "打包中...",
   ready: "✅ 已就绪",
+  uploading: "上传中...",
+  uploaded: "🚀 已上传",
+  upload_failed: "⚠️ 上传失败",
   published: "🎉 已发布",
   failed: "❌ 失败",
 };
@@ -46,7 +55,9 @@ export default function PublishPanel({ productId, productStatus }: PublishPanelP
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["douyin", "xiaohongshu"]);
 
   const canPublish = ["ready", "done", "completed"].includes(productStatus);
-  const hasInProgress = jobs.some((j) => ["pending", "packaging"].includes(j.status));
+  const hasInProgress = jobs.some((j) =>
+    ["pending", "packaging", "uploading"].includes(j.status)
+  );
 
   const fetchJobs = useCallback(async () => {
     try {
@@ -90,6 +101,13 @@ export default function PublishPanel({ productId, productStatus }: PublishPanelP
     } finally {
       setTriggering(false);
     }
+  };
+
+  const handleRetryUpload = async (jobId: string) => {
+    const res = await fetch(`/api/v1/publish/job/${jobId}/retry-upload`, {
+      method: "POST",
+    });
+    if (res.ok) await fetchJobs();
   };
 
   const handleMarkPublished = async (jobId: string) => {
@@ -173,6 +191,32 @@ export default function PublishPanel({ productId, productStatus }: PublishPanelP
                 >
                   {STATUS_LABEL[job.status] || job.status}
                 </span>
+                {/* Post URL link */}
+                {job.post_url && (
+                  <a
+                    href={job.post_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    查看帖子 →
+                  </a>
+                )}
+                {/* Upload error detail */}
+                {job.status === "upload_failed" && job.upload_result && (
+                  <p className="text-xs text-orange-600 mt-1">
+                    {String((job.upload_result as Record<string, unknown>).error || "上传失败")}
+                  </p>
+                )}
+                {/* Retry upload button */}
+                {job.status === "upload_failed" && (
+                  <button
+                    onClick={() => handleRetryUpload(job.publish_job_id)}
+                    className="mt-1 text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded hover:bg-orange-200"
+                  >
+                    🔄 重试上传
+                  </button>
+                )}
                 {job.status === "failed" && job.error_msg && (
                   <span
                     className="text-xs text-red-500 truncate"
