@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.executor import Executor
 from backend.core.gatekeeper import Gatekeeper, PermissionDeniedError
-from backend.core.notifier import FeishuNotifier, NotifyContext, get_notifier
+from backend.core.qqbot_notifier import QQBotNotifier as FeishuNotifier, NotifyContext, get_notifier
 from backend.core.planner import Planner
 from backend.core.tester import Tester
 from backend.models.project import (

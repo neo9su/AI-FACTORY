@@ -21,12 +21,13 @@ class Planner:
 
     def __init__(self) -> None:
         """Initialize planner with OpenAI-compatible client."""
-        api_key = os.getenv("ANTHROPIC_API_KEY")
+        api_key = os.getenv("LLM_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY environment variable is required")
+            raise ValueError("LLM_API_KEY or ANTHROPIC_API_KEY environment variable is required")
         base_url = os.getenv("OPENAI_BASE_URL", "http://10.190.0.214:8080/v1")
         self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-        self.model = os.getenv("LLM_MODEL", "us.anthropic.claude-sonnet-4-20250514-v1:0")
+        self.model = os.getenv("LLM_MODEL", "deepseek/deepseek-chat")
+        self.fallback_model = os.getenv("LLM_FALLBACK_MODEL", "us.anthropic.claude-opus-4-6")
 
     async def analyze_requirements(self, project: Project) -> dict[str, Any]:
         """
@@ -59,11 +60,22 @@ Generate a structured PRD in JSON format with the following sections:
 Return ONLY valid JSON, no markdown formatting.
 """
 
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            max_tokens=4096,
-            messages=[{"role": "user", "content": prompt}],
-        )
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                max_tokens=4096,
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as e:
+            # Fallback to backup model
+            if self.fallback_model and self.fallback_model != self.model:
+                response = await self.client.chat.completions.create(
+                    model=self.fallback_model,
+                    max_tokens=4096,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+            else:
+                raise
 
         # Extract text content
         prd_text = response.choices[0].message.content

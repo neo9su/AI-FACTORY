@@ -244,13 +244,14 @@ class TestSendStageUpdate:
 
         assert result.success is True
 
-    async def test_no_config_returns_failure(self):
-        """Notifier with no webhook/app config should return a failed result gracefully."""
+    async def test_no_config_returns_skip(self):
+        """Notifier with no webhook/app config should skip gracefully (success=True, skipped)."""
         n = FeishuNotifier()
         ctx = _make_ctx()
         result = await n.send_stage_update(ctx)
-        assert result.success is False
-        assert result.error is not None
+        # When no transport is configured, FeishuNotifier skips silently
+        assert result.success is True
+        assert result.response_body == "skipped"
 
     async def test_http_error_returns_failure(self):
         n = _make_notifier()
