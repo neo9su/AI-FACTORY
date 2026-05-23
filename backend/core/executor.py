@@ -1,19 +1,26 @@
 """
-Executor module for code generation using Claude Code subprocess.
+Executor module for code generation using LLM API (OpenAI-compatible).
 
-Runs claude -p commands in project workspace directories.
+Uses the configured LLM endpoint to generate code for tasks.
+Supports fallback model if primary fails.
 """
 import asyncio
+import json
 import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
+from openai import AsyncOpenAI
+
 from backend.models.project import AgentRun, AgentStatus, Project, Task
+
+load_dotenv()
 
 
 class Executor:
-    """Code generation executor using Claude Code subprocess."""
+    """Code generation executor using LLM API."""
 
     def __init__(self, workspace_root: str = "./workspace") -> None:
         """
@@ -24,6 +31,13 @@ class Executor:
         """
         self.workspace_root = Path(workspace_root)
         self.workspace_root.mkdir(exist_ok=True)
+        
+        # Initialize LLM client
+        api_key = os.getenv("LLM_API_KEY") or os.getenv("ANTHROPIC_API_KEY", "")
+        base_url = os.getenv("OPENAI_BASE_URL", "http://10.190.0.214:8080/v1")
+        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self.model = os.getenv("LLM_MODEL", "deepseek-chat")
+        self.fallback_model = os.getenv("LLM_FALLBACK_MODEL", "us.anthropic.claude-opus-4-6")
 
     def get_project_workspace(self, project: Project) -> Path:
         """
@@ -46,12 +60,12 @@ class Executor:
         max_turns: int = 20,
     ) -> AgentRun:
         """
-        Execute a task using Claude Code subprocess.
+        Execute a task using LLM API to generate code.
 
         Args:
             project: Project instance
             task: Task instance
-            max_turns: Maximum conversation turns for Claude Code
+            max_turns: Maximum iterations (unused in API mode, kept for interface compat)
 
         Returns:
             AgentRun: Agent run record with execution results
@@ -65,26 +79,23 @@ class Executor:
         agent_run = AgentRun(
             project_id=project.id,
             task_id=task.id,
-            agent_name="claude_code_executor",
+            agent_name="llm_code_executor",
             input=prompt,
             status=AgentStatus.RUNNING,
             started_at=datetime.utcnow(),
         )
 
         try:
-            # Execute Claude Code subprocess
-            stdout, stderr, returncode = await self._run_claude_subprocess(
-                workspace=workspace,
-                prompt=prompt,
-                max_turns=max_turns,
-            )
+            # Execute LLM code generation
+            result = await self._call_llm(prompt, workspace)
+
+            # Write generated code to workspace
+            await self._write_generated_files(workspace, result)
 
             # Update agent run with results
-            agent_run.output = stdout
-            agent_run.logs = stderr
-            agent_run.status = (
-                AgentStatus.SUCCESS if returncode == 0 else AgentStatus.FAILED
-            )
+            agent_run.output = result
+            agent_run.logs = f"Generated code written to {workspace}"
+            agent_run.status = AgentStatus.SUCCESS
             agent_run.finished_at = datetime.utcnow()
 
         except asyncio.TimeoutError:
@@ -100,14 +111,14 @@ class Executor:
 
     def _build_task_prompt(self, task: Task, project: Project) -> str:
         """
-        Build Claude Code prompt from task details.
+        Build LLM prompt from task details.
 
         Args:
             task: Task instance
             project: Project instance
 
         Returns:
-            str: Formatted prompt for Claude Code
+            str: Formatted prompt
         """
         prompt = f"""
 Project: {project.name}
@@ -126,69 +137,92 @@ Requirements:
 4. Add appropriate tests if applicable
 5. Document complex logic with comments
 
+Output your response as a JSON object with this structure:
+{{
+  "files": [
+    {{"path": "relative/file/path.ext", "content": "file content here"}},
+    ...
+  ],
+  "summary": "Brief summary of what was implemented"
+}}
+
 Complete this task fully and ensure all code compiles/runs without errors.
+Return ONLY the JSON, no markdown formatting.
 """
         return prompt
 
-    async def _run_claude_subprocess(
-        self,
-        workspace: Path,
-        prompt: str,
-        max_turns: int = 20,
-        timeout: int = 600,
-    ) -> tuple[str, str, int]:
+    async def _call_llm(self, prompt: str, workspace: Path) -> str:
         """
-        Run Claude Code as subprocess.
-
+        Call LLM API with fallback support.
+        
         Args:
-            workspace: Working directory for subprocess
             prompt: Task prompt
-            max_turns: Maximum conversation turns
-            timeout: Execution timeout in seconds
-
+            workspace: Working directory context
+            
         Returns:
-            tuple: (stdout, stderr, returncode)
+            str: LLM response content
         """
-        # Escape prompt for shell
-        escaped_prompt = prompt.replace("'", "'\"'\"'")
+        # Include workspace context if files exist
+        context = ""
+        existing_files = list(workspace.rglob("*"))
+        if existing_files:
+            file_list = [str(f.relative_to(workspace)) for f in existing_files if f.is_file()]
+            if file_list:
+                context = f"\n\nExisting files in workspace:\n" + "\n".join(f"- {f}" for f in file_list[:20])
 
-        # Build command
-        command = [
-            "claude",
-            "-p",
-            escaped_prompt,
-            "--max-turns",
-            str(max_turns),
-            "--dangerously-skip-permissions",
+        messages = [
+            {"role": "system", "content": "You are an expert software engineer. Generate high-quality code based on the task description. Always output valid JSON with the specified structure."},
+            {"role": "user", "content": prompt + context},
         ]
 
-        # Run subprocess
-        process = await asyncio.create_subprocess_exec(
-            *command,
-            cwd=str(workspace),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-
         try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                process.communicate(),
-                timeout=timeout,
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=8192,
+                temperature=0.1,
             )
-            stdout = stdout_bytes.decode("utf-8", errors="replace")
-            stderr = stderr_bytes.decode("utf-8", errors="replace")
-            returncode = process.returncode or 0
-
-        except asyncio.TimeoutError:
-            # Kill process on timeout
-            try:
-                process.kill()
-                await process.wait()
-            except Exception:
-                pass
+            return response.choices[0].message.content
+        except Exception as e:
+            # Fallback to backup model
+            if self.fallback_model and self.fallback_model != self.model:
+                response = await self.client.chat.completions.create(
+                    model=self.fallback_model,
+                    messages=messages,
+                    max_tokens=8192,
+                    temperature=0.1,
+                )
+                return response.choices[0].message.content
             raise
 
-        return stdout, stderr, returncode
+    async def _write_generated_files(self, workspace: Path, result: str) -> None:
+        """
+        Parse LLM output and write generated files to workspace.
+        
+        Args:
+            workspace: Project workspace directory
+            result: LLM response (expected JSON with files array)
+        """
+        try:
+            # Try to parse as JSON
+            data = result
+            if "```json" in result:
+                data = result.split("```json")[1].split("```")[0].strip()
+            elif "```" in result:
+                data = result.split("```")[1].split("```")[0].strip()
+            
+            parsed = json.loads(data)
+            files = parsed.get("files", [])
+            
+            for file_info in files:
+                file_path = workspace / file_info["path"]
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                file_path.write_text(file_info["content"], encoding="utf-8")
+                
+        except (json.JSONDecodeError, KeyError, TypeError):
+            # If not valid JSON, write raw output as a single file
+            output_file = workspace / "generated_output.txt"
+            output_file.write_text(result, encoding="utf-8")
 
     async def generate_code(
         self,
@@ -202,7 +236,7 @@ Complete this task fully and ensure all code compiles/runs without errors.
         Args:
             project: Project instance
             prompt: Generation prompt
-            max_turns: Maximum conversation turns
+            max_turns: Maximum iterations (unused in API mode)
 
         Returns:
             AgentRun: Agent run record with execution results
@@ -213,24 +247,19 @@ Complete this task fully and ensure all code compiles/runs without errors.
         agent_run = AgentRun(
             project_id=project.id,
             task_id=None,
-            agent_name="claude_code_executor",
+            agent_name="llm_code_executor",
             input=prompt,
             status=AgentStatus.RUNNING,
             started_at=datetime.utcnow(),
         )
 
         try:
-            stdout, stderr, returncode = await self._run_claude_subprocess(
-                workspace=workspace,
-                prompt=prompt,
-                max_turns=max_turns,
-            )
+            result = await self._call_llm(prompt, workspace)
+            await self._write_generated_files(workspace, result)
 
-            agent_run.output = stdout
-            agent_run.logs = stderr
-            agent_run.status = (
-                AgentStatus.SUCCESS if returncode == 0 else AgentStatus.FAILED
-            )
+            agent_run.output = result
+            agent_run.logs = f"Generated code written to {workspace}"
+            agent_run.status = AgentStatus.SUCCESS
             agent_run.finished_at = datetime.utcnow()
 
         except asyncio.TimeoutError:

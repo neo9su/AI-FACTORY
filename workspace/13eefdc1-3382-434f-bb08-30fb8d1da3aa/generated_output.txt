@@ -1,0 +1,25 @@
+{
+  "files": [
+    {
+      "path": "README.md",
+      "content": "# Fibonacci CLI\n\nA command-line tool to compute Fibonacci numbers.\n\n## Requirements\n\n- Python 3.8+\n\n## Installation\n\n```bash\npip install -r requirements.txt\n```\n\n## Usage\n\n```bash\npython fib_cli.py --n 10\n```\n\n## Testing\n\n```bash\npytest\n```\n"
+    },
+    {
+      "path": "requirements.txt",
+      "content": "pytest\n"
+    },
+    {
+      "path": ".gitignore",
+      "content": "__pycache__/\n*.pyc\n*.pyo\n*.egg-info/\ndist/\nbuild/\n.venv/\nvenv/\n*.egg\n"
+    },
+    {
+      "path": "fib_cli.py",
+      "content": "#!/usr/bin/env python3\n\"\"\"Fibonacci CLI - Compute Fibonacci numbers.\"\"\"\n\nimport argparse\nimport logging\nimport sys\nfrom typing import List, Optional\n\n\ndef fibonacci(n: int) -> List[int]:\n    \"\"\"\n    Compute the first n Fibonacci numbers.\n\n    Args:\n        n: Number of Fibonacci numbers to compute (must be >= 0).\n\n    Returns:\n        List of Fibonacci numbers.\n\n    Raises:\n        ValueError: If n is negative.\n    \"\"\"\n    if n < 0:\n        raise ValueError(\"n must be non-negative\")\n    if n == 0:\n        return []\n    if n == 1:\n        return [0]\n    fib_sequence: List[int] = [0, 1]\n    for i in range(2, n):\n        fib_sequence.append(fib_sequence[i - 1] + fib_sequence[i - 2])\n    return fib_sequence\n\n\ndef setup_logging(verbose: bool = False) -> None:\n    \"\"\"Configure logging level.\"\"\"\n    level = logging.DEBUG if verbose else logging.INFO\n    logging.basicConfig(\n        level=level,\n        format=\"%(asctime)s - %(levelname)s - %(message)s\",\n        datefmt=\"%Y-%m-%d %H:%M:%S\",\n    )\n\n\ndef parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:\n    \"\"\"Parse command-line arguments.\"\"\"\n    parser = argparse.ArgumentParser(\n        description=\"Compute Fibonacci numbers.\"\n    )\n    parser.add_argument(\n        \"-n\",\n        \"--number\",\n        type=int,\n        required=True,\n        help=\"Number of Fibonacci numbers to compute (non-negative integer)\",\n    )\n    parser.add_argument(\n        \"-v\",\n        \"--verbose\",\n        action=\"store_true\",\n        help=\"Enable verbose logging\",\n    )\n    return parser.parse_args(args)\n\n\ndef main() -> None:\n    \"\"\"Entry point for the CLI.\"\"\"\n    args = parse_args()\n    setup_logging(args.verbose)\n    logger = logging.getLogger(__name__)\n\n    try:\n        result = fibonacci(args.number)\n        logger.info(\"Fibonacci sequence for n=%d: %s\", args.number, result)\n        print(result)\n    except ValueError as e:\n        logger.error(\"Error: %s\", e)\n        sys.exit(1)\n\n\nif __name__ == \"__main__\":\n    main()\n"
+    },
+    {
+      "path": "test_fib_cli.py",
+      "content": "#!/usr/bin/env python3\n\"\"\"Tests for Fibonacci CLI.\"\"\"\n\nimport pytest\nfrom fib_cli import fibonacci, parse_args\n\n\ndef test_fibonacci_zero() -> None:\n    \"\"\"Test fibonacci with n=0.\"\"\"\n    assert fibonacci(0) == []\n\n\ndef test_fibonacci_one() -> None:\n    \"\"\"Test fibonacci with n=1.\"\"\"\n    assert fibonacci(1) == [0]\n\n\ndef test_fibonacci_two() -> None:\n    \"\"\"Test fibonacci with n=2.\"\"\"\n    assert fibonacci(2) == [0, 1]\n\n\ndef test_fibonacci_ten() -> None:\n    \"\"\"Test fibonacci with n=10.\"\"\"\n    expected = [0, 1, 1, 2, 3, 5, 8, 13, 21, 34]\n    assert fibonacci(10) == expected\n\n\ndef test_fibonacci_negative() -> None:\n    \"\"\"Test fibonacci with negative n raises ValueError.\"\"\"\n    with pytest.raises(ValueError):\n        fibonacci(-1)\n\n\ndef test_parse_args_valid() -> None:\n    \"\"\"Test parse_args with valid arguments.\"\"\"\n    args = parse_args([\"-n\", \"5\"])\n    assert args.number == 5\n    assert args.verbose is False\n\n\ndef test_parse_args_verbose() -> None:\n    \"\"\"Test parse_args with verbose flag.\"\"\"\n    args = parse_args([\"-n\", \"3\", \"-v\"])\n    assert args.number == 3\n    assert args.verbose is True\n\n\ndef test_parse_args_missing_n() -> None:\n    \"\"\"Test parse_args without -n raises SystemExit.\"\"\"\n    with pytest.raises(SystemExit):\n        parse_args([])\n"
+    }
+  ],
+  "summary": "Created Fibonacci CLI project with fib_cli.py as main entry point, including fibonacci function, argument parsing with argparse, logging, error handling, and type hints. Added test_fib_cli.py with pytest tests covering normal cases, edge cases, and error conditions. Included README.md, requirements.txt (pytest), and .gitignore."
+}

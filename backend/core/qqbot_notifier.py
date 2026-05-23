@@ -41,13 +41,16 @@ class CardColor(str, Enum):
 
 @dataclass
 class NotifyContext:
-    """Context for a notification event."""
-    project_name: str
-    stage: str
-    status: str  # running / success / failed / blocked
+    """Context for a notification event (matches old FeishuNotifier interface)."""
+    project_id: str = ""
+    project_name: str = ""
+    stage: str = ""
     message: str = ""
     details: dict = field(default_factory=dict)
+    error: Optional[str] = None
+    preview_url: Optional[str] = None
     color: CardColor = CardColor.BLUE
+    status: str = ""  # running / success / failed / blocked (optional)
 
 
 @dataclass
@@ -116,17 +119,23 @@ class QQBotNotifier:
             "failed": "❌",
             "blocked": "⚠️",
         }
-        emoji = status_emoji.get(ctx.status, "ℹ️")
+        status = ctx.status or ctx.stage or "info"
+        emoji = status_emoji.get(status, "ℹ️")
         
         lines = [
             f"{emoji} **{ctx.project_name}**",
             f"",
             f"**阶段:** {ctx.stage}",
-            f"**状态:** {ctx.status.upper()}",
         ]
+        
+        if ctx.status:
+            lines.append(f"**状态:** {ctx.status.upper()}")
         
         if ctx.message:
             lines.append(f"**信息:** {ctx.message}")
+        
+        if ctx.error:
+            lines.append(f"**错误:** {ctx.error}")
         
         if ctx.details:
             lines.append("")
@@ -142,69 +151,118 @@ class QQBotNotifier:
 
     async def send_task_complete(
         self,
-        project_name: str,
-        task_name: str,
-        duration: float,
+        ctx_or_name,
+        task_title: str = "",
+        task_name: str = "",
+        task_status: str = "completed",
+        duration: float = 0,
         files_changed: int = 0,
+        retry_count: int = 0,
     ) -> NotifyResult:
         """Send task completion notification."""
+        if isinstance(ctx_or_name, NotifyContext):
+            project_name = ctx_or_name.project_name
+        else:
+            project_name = ctx_or_name
+        
+        title = task_title or task_name
+        emoji = "✅" if task_status in ("completed", "passed") else "❌"
         msg = (
-            f"✅ **任务完成**\n\n"
+            f"{emoji} **任务{'完成' if task_status in ('completed', 'passed') else '失败'}**\n\n"
             f"**项目:** {project_name}\n"
-            f"**任务:** {task_name}\n"
-            f"**耗时:** {duration:.1f}s\n"
-            f"**文件变更:** {files_changed}"
+            f"**任务:** {title}\n"
+            f"**状态:** {task_status}\n"
+            f"**重试次数:** {retry_count}"
         )
+        if duration:
+            msg += f"\n**耗时:** {duration:.1f}s"
+        if files_changed:
+            msg += f"\n**文件变更:** {files_changed}"
         return await self._send_message(msg)
 
     async def send_test_result(
         self,
-        project_name: str,
-        passed: int,
-        failed: int,
-        total: int,
+        ctx_or_name,
+        passed: int = 0,
+        failed: int = 0,
+        total: int = 0,
         coverage: float = 0.0,
+        test_type: str = "",
     ) -> NotifyResult:
         """Send test result notification."""
+        if isinstance(ctx_or_name, NotifyContext):
+            project_name = ctx_or_name.project_name
+            # Try to parse from message if not provided
+            if not total and ctx_or_name.message:
+                pass  # Use provided params
+        else:
+            project_name = ctx_or_name
+        
         emoji = "✅" if failed == 0 else "❌"
         msg = (
             f"{emoji} **测试结果**\n\n"
             f"**项目:** {project_name}\n"
             f"**通过:** {passed}/{total}\n"
-            f"**失败:** {failed}\n"
-            f"**覆盖率:** {coverage:.1f}%"
+            f"**失败:** {failed}"
         )
+        if coverage:
+            msg += f"\n**覆盖率:** {coverage:.1f}%"
         return await self._send_message(msg)
 
     async def send_delivery_report(
         self,
-        project_name: str,
+        ctx_or_name,
         repo_url: str = "",
         deploy_url: str = "",
         summary: str = "",
+        preview_url: str = None,
+        passed_tests: int = 0,
+        failed_tests: int = 0,
+        known_issues: list = None,
     ) -> NotifyResult:
         """Send delivery report notification."""
+        if isinstance(ctx_or_name, NotifyContext):
+            project_name = ctx_or_name.project_name
+        else:
+            project_name = ctx_or_name
+        
         lines = [f"🎉 **项目交付**\n", f"**项目:** {project_name}"]
         if repo_url:
             lines.append(f"**仓库:** {repo_url}")
-        if deploy_url:
-            lines.append(f"**部署:** {deploy_url}")
+        if deploy_url or preview_url:
+            lines.append(f"**部署:** {deploy_url or preview_url}")
+        if passed_tests:
+            lines.append(f"**测试通过:** {passed_tests}")
+        if failed_tests:
+            lines.append(f"**测试失败:** {failed_tests}")
+        if known_issues:
+            lines.append(f"**已知问题:** {', '.join(known_issues[:3])}")
         if summary:
             lines.append(f"\n{summary}")
         return await self._send_message("\n".join(lines))
 
     async def send_gate_blocked(
         self,
-        project_name: str,
-        reason: str,
+        ctx_or_name,
+        reason: str = "",
         action_required: str = "",
+        operation: str = "",
     ) -> NotifyResult:
         """Send gate-blocked notification."""
+        if isinstance(ctx_or_name, NotifyContext):
+            project_name = ctx_or_name.project_name
+            if not reason:
+                reason = ctx_or_name.message
+        else:
+            project_name = ctx_or_name
+        
         msg = (
             f"⚠️ **流程阻塞**\n\n"
             f"**项目:** {project_name}\n"
             f"**原因:** {reason}"
         )
+        if operation:
+            msg += f"\n**操作:** {operation}"
         if action_required:
             msg += f"\n**需要操作:** {action_required}"
         return await self._send_message(msg)
