@@ -108,29 +108,44 @@ Return ONLY valid JSON, no markdown formatting.
         Returns:
             list: List of task dictionaries ready for database insertion
         """
-        prompt = f"""
-Based on the following PRD, generate a list of development tasks that need to be completed.
+        prompt = f"""Based on the following PRD, generate development tasks.
 
 Project: {project.name}
-PRD: {json.dumps(prd, indent=2)}
+Tech Stack: {project.tech_stack or "Python"}
+Goal: {project.goal or "Implement all features"}
 
-Generate tasks in JSON format as an array of objects, each with:
-- title: Brief task title (max 100 chars)
-- description: Detailed task description
-- role: Role responsible (e.g., "frontend", "backend", "devops", "testing")
-- priority: Priority level (0=highest, higher numbers=lower priority)
-- dependencies: Array of task indices this task depends on (use index in the array)
+PRD Summary:
+{json.dumps(prd, indent=2)[:3000]}
 
-Create tasks in logical execution order:
-1. Setup tasks (project structure, dependencies)
-2. Backend tasks (API, database, core logic)
-3. Frontend tasks (UI components, pages)
-4. Integration tasks
-5. Testing tasks
-6. Deployment tasks
+Generate a MINIMAL set of focused tasks (3-6 tasks max for simple projects, up to 10 for complex ones).
+Each task should be independently executable by an AI code generator.
 
-Return ONLY valid JSON array, no markdown formatting.
-"""
+Rules:
+- Combine related work into single tasks (don't split "create file" into separate tasks)
+- The FIRST task must set up the entire project structure + dependencies
+- Each task should produce working, testable code
+- Include at least one "testing" task
+- Keep descriptions actionable and specific
+
+Return JSON array:
+[
+  {{
+    "title": "Set up project structure and core implementation",
+    "description": "Create project directory, implement main functionality, add dependencies file",
+    "role": "backend",
+    "priority": 0,
+    "dependencies": []
+  }},
+  {{
+    "title": "Add unit tests",
+    "description": "Write comprehensive tests for all functions",
+    "role": "testing",
+    "priority": 1,
+    "dependencies": [0]
+  }}
+]
+
+Return ONLY valid JSON array, no markdown."""
 
         response = await self.client.chat.completions.create(
             model=self.model,

@@ -111,43 +111,95 @@ class Executor:
 
     def _build_task_prompt(self, task: Task, project: Project) -> str:
         """
-        Build LLM prompt from task details.
+        Build optimized LLM prompt from task details.
 
         Args:
             task: Task instance
             project: Project instance
 
         Returns:
-            str: Formatted prompt
+            str: Formatted prompt for high-quality code generation
         """
-        prompt = f"""
-Project: {project.name}
-Tech Stack: {project.tech_stack or "As appropriate"}
+        tech_stack = project.tech_stack or "Python"
+        
+        # Detect language-specific guidelines
+        stack_lower = tech_stack.lower()
+        if "python" in stack_lower:
+            lang_guidelines = """
+Language-specific guidelines:
+- Use Python 3.11+ features (type hints, dataclasses, pathlib)
+- Follow PEP 8 and use f-strings
+- Include __init__.py for packages
+- Use pytest for tests (conftest.py + test_*.py)
+- Add requirements.txt or pyproject.toml with dependencies
+- Use logging module (not print) for output
+- Include if __name__ == '__main__': guard for CLI tools
+"""
+        elif any(kw in stack_lower for kw in ("node", "next", "react", "typescript")):
+            lang_guidelines = """
+Language-specific guidelines:
+- Use TypeScript with strict mode
+- Functional components with hooks (React)
+- Include package.json with scripts (dev, build, test, lint)
+- Use ESLint + Prettier config
+- Use proper module imports (ES6)
+- Add tsconfig.json for TypeScript projects
+"""
+        elif "go" in stack_lower:
+            lang_guidelines = """
+Language-specific guidelines:
+- Follow Go conventions (exported names, error handling)
+- Include go.mod
+- Use standard library where possible
+- Table-driven tests
+"""
+        else:
+            lang_guidelines = f"""
+Language-specific guidelines:
+- Follow best practices for {tech_stack}
+- Include proper project structure
+"""
 
-Task: {task.title}
-Role: {task.role}
+        prompt = f"""You are an expert software engineer. Generate production-quality code for this task.
 
-Description:
-{task.description}
+## Project Context
+- **Project:** {project.name}
+- **Goal:** {project.goal or "Not specified"}
+- **Tech Stack:** {tech_stack}
+- **User Requirement:** {project.user_requirement[:500] if project.user_requirement else "See task description"}
 
-Requirements:
-1. Follow best practices for {project.tech_stack or "the chosen tech stack"}
-2. Include proper error handling and logging
-3. Write clean, maintainable code with type hints/annotations
-4. Add appropriate tests if applicable
-5. Document complex logic with comments
+## Current Task
+- **Title:** {task.title}
+- **Role:** {task.role}
+- **Description:** {task.description}
 
-Output your response as a JSON object with this structure:
+## Code Quality Requirements
+1. Production-ready: proper error handling, input validation, edge cases
+2. Well-structured: clear separation of concerns, single responsibility
+3. Fully typed: all function parameters and return types annotated
+4. Documented: docstrings for public functions, inline comments for complex logic
+5. Testable: include unit tests that cover key functionality
+6. Complete: all files needed to run the code (configs, dependencies, etc.)
+{lang_guidelines}
+## Output Format
+Return a JSON object with ALL files needed:
+```json
 {{
   "files": [
-    {{"path": "relative/file/path.ext", "content": "file content here"}},
-    ...
+    {{"path": "src/main.py", "content": "...full file content..."}},
+    {{"path": "tests/test_main.py", "content": "...full test content..."}},
+    {{"path": "requirements.txt", "content": "...dependencies..."}}
   ],
-  "summary": "Brief summary of what was implemented"
+  "summary": "Brief description of implementation approach"
 }}
+```
 
-Complete this task fully and ensure all code compiles/runs without errors.
-Return ONLY the JSON, no markdown formatting.
+IMPORTANT:
+- File paths must be relative (no leading /)
+- Include ALL necessary files (don't assume any exist)
+- Tests must actually test the implementation
+- Code must be immediately runnable
+- Return ONLY valid JSON, no markdown code blocks
 """
         return prompt
 
@@ -171,7 +223,12 @@ Return ONLY the JSON, no markdown formatting.
                 context = f"\n\nExisting files in workspace:\n" + "\n".join(f"- {f}" for f in file_list[:20])
 
         messages = [
-            {"role": "system", "content": "You are an expert software engineer. Generate high-quality code based on the task description. Always output valid JSON with the specified structure."},
+            {"role": "system", "content": (
+                "You are a senior full-stack software engineer with 15+ years experience. "
+                "You write production-quality code that is clean, well-tested, and immediately runnable. "
+                "You always output valid JSON exactly matching the requested structure. "
+                "Never wrap output in markdown code blocks. Never add commentary outside the JSON."
+            )},
             {"role": "user", "content": prompt + context},
         ]
 
