@@ -24,7 +24,8 @@ from backend.models.engagement import (  # noqa: F401 — registers tables with 
     ProductEngagement,
     OpportunityScore,
 )
-from backend.models.platform_session import PlatformSession  # noqa: F401 — registers tables with Base.metadata
+from backend.models.publish import PublishTask  # noqa: F401
+from backend.models.platform_session import PlatformSession  # noqa: F401
 
 
 async def init_db() -> None:

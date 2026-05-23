@@ -20,7 +20,7 @@ from backend.models.engagement import (
     ProductEngagement,
     OpportunityScore,
 )
-from backend.models.publish import PublishJob  # noqa: F401
+from backend.models.publish import PublishTask as PublishJob  # noqa: F401
 from backend.models.platform_session import PlatformSession  # noqa: F401
 
 __all__ = [

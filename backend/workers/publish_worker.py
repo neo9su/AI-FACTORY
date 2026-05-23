@@ -1,143 +1,77 @@
-"""ARQ worker for async publish job processing."""
 from __future__ import annotations
 
 import logging
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.core.publisher.publisher_service import PublisherService
 from backend.db.session import AsyncSessionLocal
+from backend.models.publish import PublishTask
+from backend.models.trend import ContentProduct
+from backend.core.publisher import XiaohongshuPublisher, DouyinPublisher
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_PLATFORMS = ["douyin", "xiaohongshu", "tiktok"]
-
-
-async def process_publish_job(
-    ctx: dict[str, Any],
-    publish_job_id: str,
-) -> dict[str, Any]:
-    """ARQ worker: package a ContentProduct into a publish bundle.
-
-    Args:
-        ctx: ARQ worker context
-        publish_job_id: PublishJob.id
-
-    Returns:
-        dict with status and bundle_path
+async def process_publish_job(ctx: dict[str, Any], task_id: str) -> None:
     """
-    from backend.models.publish import PublishJob
-    from backend.models.trend import ContentProduct
-
-    logger.info(f"[PublishWorker] Processing publish job {publish_job_id}")
-
+    ARQ worker function to generate a platform-optimized publishing package.
+    """
     async with AsyncSessionLocal() as db:
-        # Load publish job
-        result = await db.execute(
-            select(PublishJob).where(PublishJob.id == publish_job_id)
-        )
-        job = result.scalar_one_or_none()
-        if not job:
-            return {"status": "failed", "error": "job not found"}
+        # 1. Fetch Task
+        result = await db.execute(select(PublishTask).where(PublishTask.id == task_id))
+        task = result.scalar_one_or_none()
+        if not task:
+            logger.error(f"PublishTask {task_id} not found")
+            return
 
-        # Load product
-        result2 = await db.execute(
-            select(ContentProduct).where(ContentProduct.id == job.product_id)
-        )
-        product = result2.scalar_one_or_none()
-        if not product:
-            job.status = "failed"
-            job.error_msg = "product not found"
-            await db.commit()
-            return {"status": "failed", "error": "product not found"}
-
-        # Update status to packaging
-        job.status = "packaging"
+        task.status = "packaging"
         await db.commit()
 
         try:
-            service = PublisherService()
-            bundle = service.build_bundle(
-                product_id=str(product.id),
-                product_type=product.product_type,
-                product_meta=product.meta or {},
-                platform=job.platform,
-                tts_audio_urls=product.tts_audio_urls,
-                cover_image_url=_get_cover_url(product),
+            # 2. Fetch Product
+            prod_result = await db.execute(
+                select(ContentProduct).where(ContentProduct.id == task.product_id)
             )
-            bundle_path = service.save_bundle(
-                product_id=str(product.id),
-                platform=job.platform,
-                bundle=bundle,
-            )
+            product = prod_result.scalar_one_or_none()
+            if not product:
+                raise ValueError(f"ContentProduct {task.product_id} not found")
 
-            job.status = "ready"
-            job.bundle_path = bundle_path
-            job.bundle_data = bundle
+            # 3. Identify Publisher
+            if task.platform == "xiaohongshu":
+                publisher = XiaohongshuPublisher(product)
+            elif task.platform == "douyin":
+                publisher = DouyinPublisher(product)
+            else:
+                raise ValueError(f"Unsupported platform: {task.platform}")
+
+            # 4. Generate Package
+            content_summary = ""
+            if product.product_type == "video_script":
+                scripts = product.meta.get("scripts", [])
+                content_summary = "\n".join([f"Scene {i+1}: {s}" for i, s in enumerate(scripts)])
+            elif product.product_type == "ebook":
+                chapters = product.meta.get("chapters", [])
+                content_summary = "\n".join(chapters)
+            else:
+                content_summary = product.title
+
+            logger.info(f"Generating package for {task.platform} (Product: {product.id})")
+            package = await publisher.format_post(content_summary)
+
+            # 5. Update Task
+            task.publish_package = package
+            task.status = "ready"
             await db.commit()
-
-            logger.info(f"[PublishWorker] Job {publish_job_id} ready: {bundle_path}")
-
-            # --- Phase 5C: upload to platform ---
-            job.status = "uploading"
-            await db.commit()
-
-            try:
-                upload_result = await service.upload_to_platform(
-                    platform=job.platform,
-                    bundle=bundle,
-                )
-                job.upload_result = {
-                    "success": upload_result.success,
-                    "post_id": upload_result.post_id,
-                    "post_url": upload_result.post_url,
-                    "error": upload_result.error,
-                }
-                if upload_result.success:
-                    job.status = "uploaded"
-                    job.post_id = upload_result.post_id
-                    job.post_url = upload_result.post_url
-                    logger.info(
-                        f"[PublishWorker] Uploaded to {job.platform}: "
-                        f"post_id={upload_result.post_id}"
-                    )
-                else:
-                    job.status = "upload_failed"
-                    logger.warning(
-                        f"[PublishWorker] Upload to {job.platform} failed: "
-                        f"{upload_result.error}"
-                    )
-            except Exception as upload_err:
-                logger.exception(f"[PublishWorker] Upload exception: {upload_err}")
-                job.status = "upload_failed"
-                job.upload_result = {"success": False, "error": str(upload_err)}
-
-            await db.commit()
-            return {
-                "status": job.status,
-                "publish_job_id": publish_job_id,
-                "bundle_path": bundle_path,
-            }
+            logger.info(f"Publish package ready for {task.platform} task {task_id}")
 
         except Exception as e:
-            logger.exception(f"[PublishWorker] Job {publish_job_id} failed: {e}")
-            job.status = "failed"
-            job.error_msg = str(e)
+            logger.error(f"Publish task {task_id} failed: {async_exception_info(e)}")
+            task.status = "failed"
+            task.error_log = str(e)
             await db.commit()
-            return {"status": "failed", "error": str(e)}
+            raise e
 
-
-def _get_cover_url(product: Any) -> str | None:
-    """Extract cover image URL from product meta."""
-    meta = product.meta or {}
-    # Check common locations
-    return (
-        meta.get("cover_image_url")
-        or meta.get("cover_url")
-        or (
-            product.content_url
-            if product.content_url and ".png" in (product.content_url or "")
-            else None
-        )
-    )
+def async_exception_info(e: Exception) -> str:
+    import traceback
+    return traceback.format_exc()

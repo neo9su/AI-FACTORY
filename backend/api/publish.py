@@ -1,7 +1,7 @@
-"""Phase 5-B — Publish job REST API."""
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Optional
 
 import arq
@@ -12,17 +12,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.session import get_db
+from backend.models.publish import PublishTask
+from backend.models.trend import ContentProduct
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 SUPPORTED_PLATFORMS = ["douyin", "xiaohongshu", "tiktok"]
 
-
 class PublishRequest(BaseModel):
     product_id: str
-    platforms: list[str]  # ["douyin", "xiaohongshu", "tiktok"]
-
+    platforms: list[str]
 
 class PublishStatusResponse(BaseModel):
     publish_job_id: str
@@ -37,23 +37,29 @@ class PublishStatusResponse(BaseModel):
     error_msg: Optional[str] = None
     created_at: str
 
+def _to_status_response(task: PublishTask) -> PublishStatusResponse:
+    """Helper to convert ORM model to Pydantic response."""
+    package = task.publish_package or {}
+    return PublishStatusResponse(
+        publish_job_id=str(task.id),
+        product_id=str(task.product_id),
+        platform=task.platform,
+        status=task.status,
+        bundle_path=package.get("bundle_path"),
+        bundle_data=package,
+        upload_result=package.get("upload_result"),
+        post_id=package.get("post_id"),
+        post_url=package.get("post_url"),
+        error_msg=task.error_log,
+        created_at=task.created_at.isoformat(),
+    )
 
 @router.post("/publish/trigger")
 async def trigger_publish(
     request: PublishRequest,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Trigger publish packaging jobs for a product across requested platforms.
-
-    Creates a PublishJob for each platform and queues ARQ workers.
-    Returns list of created job IDs.
-    """
-    import os
-
-    from backend.models.publish import PublishJob
-    from backend.models.trend import ContentProduct
-
-    # Validate product exists
+    """Trigger publish packaging jobs for a product across requested platforms."""
     result = await db.execute(
         select(ContentProduct).where(ContentProduct.id == request.product_id)
     )
@@ -61,14 +67,12 @@ async def trigger_publish(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    # Validate product is ready
     if product.status not in ("ready", "done", "completed"):
         raise HTTPException(
             status_code=400,
             detail=f"Product not ready for publishing (status={product.status})",
         )
 
-    # Validate platforms
     invalid = [p for p in request.platforms if p not in SUPPORTED_PLATFORMS]
     if invalid:
         raise HTTPException(
@@ -76,7 +80,6 @@ async def trigger_publish(
             detail=f"Unsupported platforms: {invalid}. Supported: {SUPPORTED_PLATFORMS}",
         )
 
-    # Create PublishJob for each platform
     created_jobs = []
     redis_settings = RedisSettings(
         host=os.getenv("REDIS_HOST", "localhost"),
@@ -85,32 +88,27 @@ async def trigger_publish(
     redis = await arq.create_pool(redis_settings)
 
     for platform in request.platforms:
-        # Check if already pending/ready for this platform
         existing_result = await db.execute(
-            select(PublishJob).where(
-                PublishJob.product_id == request.product_id,
-                PublishJob.platform == platform,
-                PublishJob.status.in_(["pending", "packaging", "ready"]),
+            select(PublishTask).where(
+                PublishTask.product_id == request.product_id,
+                PublishTask.platform == platform,
+                PublishTask.status.in_(["pending", "packaging", "platform_ready"]),
             )
         )
         if existing_result.scalar_one_or_none():
             logger.info(f"[PublishAPI] Skipping {platform} — already has active job")
             continue
 
-        job = PublishJob(
+        task = PublishTask(
             product_id=request.product_id,
             platform=platform,
             status="pending",
         )
-        db.add(job)
-        await db.flush()  # get the ID
+        db.add(task)
+        await db.flush()
 
-        # Queue ARQ worker
-        await redis.enqueue_job(
-            "process_publish_job",
-            str(job.id),
-        )
-        created_jobs.append({"publish_job_id": str(job.id), "platform": platform})
+        await redis.enqueue_job("process_publish_job", str(task.id))
+        created_jobs.append({"publish_job_id": str(task.id), "platform": platform})
 
     await db.commit()
     await redis.aclose()
@@ -121,39 +119,19 @@ async def trigger_publish(
         "jobs": created_jobs,
     }
 
-
 @router.get("/publish/jobs/{product_id}")
 async def get_publish_jobs(
     product_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> list[PublishStatusResponse]:
     """Get all publish jobs for a product."""
-    from backend.models.publish import PublishJob
-
     result = await db.execute(
-        select(PublishJob)
-        .where(PublishJob.product_id == product_id)
-        .order_by(PublishJob.created_at.desc())
+        select(PublishTask)
+        .where(PublishTask.product_id == product_id)
+        .order_by(PublishTask.created_at.desc())
     )
     jobs = result.scalars().all()
-
-    return [
-        PublishStatusResponse(
-            publish_job_id=str(j.id),
-            product_id=str(j.product_id),
-            platform=j.platform,
-            status=j.status,
-            bundle_path=j.bundle_path,
-            bundle_data=j.bundle_data,
-            upload_result=j.upload_result,
-            post_id=j.post_id,
-            post_url=j.post_url,
-            error_msg=j.error_msg,
-            created_at=j.created_at.isoformat(),
-        )
-        for j in jobs
-    ]
-
+    return [_to_status_response(j) for j in jobs]
 
 @router.get("/publish/job/{job_id}")
 async def get_publish_job(
@@ -161,29 +139,16 @@ async def get_publish_job(
     db: AsyncSession = Depends(get_db),
 ) -> PublishStatusResponse:
     """Get a specific publish job by ID."""
-    from backend.models.publish import PublishJob
-
     result = await db.execute(
-        select(PublishJob).where(PublishJob.id == job_id)
+        select(PublishTask).where(PublishTask.id == job_id)
     )
-    job = result.scalar_one_or_none()
-    if not job:
-        raise HTTPException(status_code=404, detail="Publish job not found")
+	# Wait, I need to check if the variable name is task or job. 
+    # In my previous code it was task. Let's be consistent.
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Publish task not found")
 
-    return PublishStatusResponse(
-        publish_job_id=str(job.id),
-        product_id=str(job.product_id),
-        platform=job.platform,
-        status=job.status,
-        bundle_path=job.bundle_path,
-        bundle_data=job.bundle_data,
-        upload_result=job.upload_result,
-        post_id=job.post_id,
-        post_url=job.post_url,
-        error_msg=job.error_msg,
-        created_at=job.created_at.isoformat(),
-    )
-
+    return _to_status_response(task)
 
 @router.post("/publish/job/{job_id}/mark-published")
 async def mark_as_published(
@@ -191,25 +156,22 @@ async def mark_as_published(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     """Mark a ready publish job as published (user manually posted the content)."""
-    from backend.models.publish import PublishJob
-
     result = await db.execute(
-        select(PublishJob).where(PublishJob.id == job_id)
+        select(PublishTask).where(PublishTask.id == job_id)
     )
-    job = result.scalar_one_or_none()
-    if not job:
-        raise HTTPException(status_code=404, detail="Publish job not found")
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Publish task not found")
 
-    if job.status != "ready":
+    if task.status != "ready":
         raise HTTPException(
             status_code=400,
-            detail=f"Job must be in 'ready' state (current: {job.status})",
+            detail=f"Task must be in 'ready' state (current: {task.status})",
         )
 
-    job.status = "published"
+    task.status = "published"
     await db.commit()
     return {"status": "published", "publish_job_id": job_id}
-
 
 @router.post("/publish/job/{job_id}/retry-upload")
 async def retry_upload(
@@ -218,17 +180,17 @@ async def retry_upload(
 ) -> dict[str, str]:
     """Re-queue an upload_failed job for platform upload retry."""
     import os
-    from backend.models.publish import PublishJob
+    from backend.models.publish import PublishTask
+    
+    result = await db.execute(select(PublishTask).where(PublishTask.id == job_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Publish task not found")
 
-    result = await db.execute(select(PublishJob).where(PublishJob.id == job_id))
-    job = result.scalar_one_or_none()
-    if not job:
-        raise HTTPException(status_code=404, detail="Publish job not found")
-
-    if job.status not in ("upload_failed", "ready"):
+    if task.status not in ("upload_failed", "ready"):
         raise HTTPException(
             status_code=400,
-            detail=f"Job must be in 'upload_failed' or 'ready' state (current: {job.status})",
+            detail=f"Task must be in 'upload_failed' or 'ready' state (current: {task.status})",
         )
 
     redis_settings = RedisSettings(
@@ -236,9 +198,9 @@ async def retry_upload(
         port=int(os.getenv("REDIS_PORT", "6379")),
     )
     redis = await arq.create_pool(redis_settings)
-    job.status = "pending"
+    task.status = "pending"
     await db.commit()
-    await redis.enqueue_job("process_publish_job", str(job.id))
+    await redis.enqueue_job("process_publish_job", str(task.id))
     await redis.aclose()
 
     return {"status": "pending", "publish_job_id": job_id}

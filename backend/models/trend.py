@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
     from backend.models.engagement import OpportunityScore, ProductEngagement  # noqa: F401
-    from backend.models.publish import PublishJob  # noqa: F401
+    from backend.models.publish import PublishTask  # noqa: F401
 
 from backend.models.base import Base, TimestampMixin, UUIDMixin
 
@@ -107,8 +107,8 @@ class ContentProduct(UUIDMixin, TimestampMixin, Base):
     engagements: Mapped[list["ProductEngagement"]] = relationship(
         "ProductEngagement", back_populates="product", cascade="all, delete-orphan"
     )
-    publish_jobs: Mapped[list["PublishJob"]] = relationship(  # noqa: F821
-        "PublishJob", back_populates="product", cascade="all, delete-orphan"
+    publish_tasks: Mapped[list["PublishTask"]] = relationship(
+        "PublishTask", back_populates="product", cascade="all, delete-orphan"
     )
 
 
