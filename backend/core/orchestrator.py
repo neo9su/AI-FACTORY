@@ -3,6 +3,8 @@ Orchestrator module for managing the software factory pipeline.
 
 Implements a state machine that coordinates the entire development lifecycle:
 intake -> planning -> developing -> testing -> fixing -> reviewing -> deploying -> delivered
+
+Now with real-time WebSocket event broadcasting for frontend live updates.
 """
 import asyncio
 from datetime import datetime
@@ -11,10 +13,19 @@ from typing import Any, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.api.ws import (
+    send_agent_log,
+    send_deployment_update,
+    send_pipeline_complete,
+    send_project_status,
+    send_task_update,
+    send_test_result,
+)
 from backend.core.executor import Executor
 from backend.core.gatekeeper import Gatekeeper, PermissionDeniedError
 from backend.core.qqbot_notifier import QQBotNotifier as FeishuNotifier, NotifyContext, get_notifier
 from backend.core.planner import Planner
+from backend.core.reviewer import Reviewer
 from backend.core.tester import Tester
 from backend.models.project import (
     AgentRun,
@@ -47,6 +58,7 @@ class Orchestrator:
         self.planner = Planner()
         self.executor = Executor()
         self.tester = Tester()
+        self.reviewer = Reviewer()
         self.notifier: FeishuNotifier = notifier or get_notifier()
 
     def _notify_ctx(self, project: "Project", message: str, **kwargs: Any) -> NotifyContext:
@@ -58,6 +70,20 @@ class Orchestrator:
             message=message,
             **kwargs,
         )
+
+    async def _ws_status(self, project: Project) -> None:
+        """Push project status update via WebSocket for real-time frontend updates."""
+        try:
+            await send_project_status(str(project.id), project.status.value)
+        except Exception:
+            pass  # WebSocket failures should never block the pipeline
+
+    async def _ws_log(self, project: Project, agent: str, message: str, level: str = "info") -> None:
+        """Push agent log via WebSocket."""
+        try:
+            await send_agent_log(str(project.id), agent, message, level)
+        except Exception:
+            pass
 
     async def run_pipeline(self, project_id: str) -> None:
         """
@@ -134,6 +160,7 @@ class Orchestrator:
         """Intake stage: validate project requirements."""
         project.status = ProjectStatus.CREATED
         await self.db.commit()
+        await self._ws_status(project)
         await self.notifier.send_stage_update(
             self._notify_ctx(project, f"项目 '{project.name}' 已创建，开始需求分析。")
         )
@@ -142,6 +169,8 @@ class Orchestrator:
         """Planning stage: analyze requirements and generate tasks."""
         project.status = ProjectStatus.REQUIREMENT_ANALYZING
         await self.db.commit()
+        await self._ws_status(project)
+        await self._ws_log(project, "planner", "开始分析需求，生成 PRD...")
         await self.notifier.send_stage_update(
             self._notify_ctx(project, "正在分析需求，生成 PRD...")
         )
@@ -171,6 +200,8 @@ class Orchestrator:
         # Generate tasks
         project.status = ProjectStatus.PLANNING
         await self.db.commit()
+        await self._ws_status(project)
+        await self._ws_log(project, "planner", f"PRD 生成完成，正在拆分开发任务...")
         await self.notifier.send_stage_update(
             self._notify_ctx(
                 project,
@@ -211,6 +242,8 @@ class Orchestrator:
         """Developing stage: execute all tasks."""
         project.status = ProjectStatus.DEVELOPING
         await self.db.commit()
+        await self._ws_status(project)
+        await self._ws_log(project, "executor", "AI 开始执行开发任务...")
         await self.notifier.send_stage_update(
             self._notify_ctx(project, "Claude Code 开始执行开发任务...")
         )
@@ -244,6 +277,14 @@ class Orchestrator:
                 task.status = TaskStatus.FAILED
 
             await self.db.commit()
+            # WebSocket: real-time task status update
+            try:
+                await send_task_update(
+                    str(project.id), str(task.id), task.status.value,
+                    f"Task '{task.title}' {'completed' if task.status == TaskStatus.COMPLETED else 'failed'}"
+                )
+            except Exception:
+                pass
             await self.notifier.send_task_complete(
                 self._notify_ctx(project, f"任务执行{'完成' if task.status == TaskStatus.COMPLETED else '失败'}"),
                 task_title=task.title,
@@ -255,6 +296,8 @@ class Orchestrator:
         """Testing stage: run all tests."""
         project.status = ProjectStatus.TESTING
         await self.db.commit()
+        await self._ws_status(project)
+        await self._ws_log(project, "tester", "正在运行测试套件...")
         await self.notifier.send_stage_update(
             self._notify_ctx(project, "正在运行测试套件（unit / integration / E2E）...")
         )
@@ -277,6 +320,16 @@ class Orchestrator:
             f"Tests: {results['passed']}/{results['total']} passed",
             AgentStatus.SUCCESS if results["all_passed"] else AgentStatus.FAILED,
         )
+        # WebSocket: push test results
+        try:
+            await send_test_result(
+                str(project.id),
+                "full_suite",
+                results["all_passed"],
+                results.get("error_log") or "",
+            )
+        except Exception:
+            pass
         await self.notifier.send_test_result(
             self._notify_ctx(
                 project,
@@ -293,12 +346,17 @@ class Orchestrator:
         project: Project,
         policy: PermissionPolicy,
     ) -> None:
-        """Fixing stage: fix failing tests."""
+        """Fixing stage: fix failing tests with error context passed to LLM."""
         project.status = ProjectStatus.FIXING
         await self.db.commit()
+        await self._ws_status(project)
+        await self._ws_log(project, "executor", "测试未通过，AI 正在根据错误信息修复代码...")
         await self.notifier.send_stage_update(
-            self._notify_ctx(project, "测试未通过，Claude Code 正在修复失败任务...")
+            self._notify_ctx(project, "测试未通过，AI 正在根据错误信息修复代码...")
         )
+
+        # Collect error context from latest test runs
+        error_context = await self._collect_test_errors(project)
 
         # Get failed tests
         result = await self.db.execute(
@@ -308,7 +366,7 @@ class Orchestrator:
         )
         failed_tasks = result.scalars().all()
 
-        # Retry failed tasks
+        # Retry failed tasks with error context
         for task in failed_tasks:
             # Check retry policy
             Gatekeeper.validate_task_retry(policy, task.retry_count)
@@ -317,8 +375,10 @@ class Orchestrator:
             task.status = TaskStatus.RETRYING
             await self.db.commit()
 
-            # Re-execute with error context
-            agent_run = await self.executor.execute_task(project, task)
+            # Re-execute WITH error context so LLM knows what to fix
+            agent_run = await self.executor.execute_task(
+                project, task, error_context=error_context
+            )
             self.db.add(agent_run)
 
             if agent_run.status == AgentStatus.SUCCESS:
@@ -334,30 +394,79 @@ class Orchestrator:
                 retry_count=task.retry_count,
             )
 
+    async def _collect_test_errors(self, project: Project) -> str:
+        """
+        Collect error logs from the latest test runs for this project.
+
+        Returns a formatted string with all test failures and their error output.
+        """
+        from backend.models.project import TestRun, TestStatus
+
+        result = await self.db.execute(
+            select(TestRun)
+            .where(TestRun.project_id == project.id)
+            .where(TestRun.status == TestStatus.FAILED)
+            .order_by(TestRun.created_at.desc())
+            .limit(10)
+        )
+        failed_runs = result.scalars().all()
+
+        if not failed_runs:
+            return "Tests failed but no error details available."
+
+        error_parts = []
+        for run in failed_runs:
+            header = f"[{run.test_type}] Command: {run.command}"
+            error = run.error_log or run.result or "No output captured"
+            error_parts.append(f"{header}\n{error[:500]}")
+
+        return "\n\n---\n\n".join(error_parts)
+
     async def _stage_reviewing(self, project: Project) -> None:
-        """Reviewing stage: code review (placeholder for future implementation)."""
+        """Reviewing stage: LLM-powered code review for security, quality, and best practices."""
         project.status = ProjectStatus.REVIEWING
         await self.db.commit()
+        await self._ws_status(project)
+        await self._ws_log(project, "reviewer", "正在进行 AI 代码审查...")
         await self.notifier.send_stage_update(
-            self._notify_ctx(project, "所有测试通过，正在进行自动代码审查...")
+            self._notify_ctx(project, "所有测试通过，正在进行 AI 代码审查（安全性/质量/最佳实践）...")
         )
 
-        # Placeholder: In future, integrate with code review tools
-        await self._log_agent_run(
-            project,
-            "reviewer",
-            "Code review",
-            "Automated review passed",
-            AgentStatus.SUCCESS,
-        )
-        # Notify that review passed
-        await self.notifier.send_stage_update(
-            self._notify_ctx(
-                project,
-                "代码审查通过 ✅，准备进入部署阶段。",
-                details={"审查结果": "自动审查通过，无严重问题"},
+        # Perform LLM code review
+        agent_run, review_result = await self.reviewer.review_project(project)
+        self.db.add(agent_run)
+        await self.db.commit()
+
+        # Decide if review passes
+        if review_result.passed:
+            await self.notifier.send_stage_update(
+                self._notify_ctx(
+                    project,
+                    f"代码审查通过 ✅ 评分：{review_result.score}/100",
+                    details={
+                        "评分": str(review_result.score),
+                        "问题数": str(len(review_result.issues)),
+                        "摘要": review_result.summary,
+                    },
+                )
             )
-        )
+        else:
+            # Review failed but don't block pipeline — log issues and continue
+            issue_summary = "; ".join(
+                f"[{i['severity']}] {i['description']}"
+                for i in review_result.issues[:5]
+            )
+            await self.notifier.send_stage_update(
+                self._notify_ctx(
+                    project,
+                    f"代码审查发现问题（评分：{review_result.score}/100），但不阻断流水线。",
+                    details={
+                        "评分": str(review_result.score),
+                        "关键问题": issue_summary[:200],
+                        "建议": "; ".join(review_result.suggestions[:3]),
+                    },
+                )
+            )
 
     async def _stage_deploying(
         self,
@@ -367,6 +476,8 @@ class Orchestrator:
         """Deploying stage: deploy to staging/production."""
         project.status = ProjectStatus.DEPLOYING
         await self.db.commit()
+        await self._ws_status(project)
+        await self._ws_log(project, "deployer", "代码审查通过，正在部署...")
         await self.notifier.send_stage_update(
             self._notify_ctx(project, "代码审查通过，正在部署到预览环境...")
         )
@@ -401,6 +512,13 @@ class Orchestrator:
             f"Deployment successful: {deployment.preview_url}",
             AgentStatus.SUCCESS,
         )
+        # WebSocket: deployment update
+        try:
+            await send_deployment_update(
+                str(project.id), environment, deployment.preview_url, "success"
+            )
+        except Exception:
+            pass
         await self.notifier.send_stage_update(
             self._notify_ctx(
                 project,
@@ -413,6 +531,7 @@ class Orchestrator:
         """Delivered stage: generate delivery report."""
         project.status = ProjectStatus.DELIVERED
         await self.db.commit()
+        await self._ws_status(project)
 
         # Collect test results
         result = await self.db.execute(
@@ -460,6 +579,13 @@ class Orchestrator:
             failed_tests=len(failed_tests),
             known_issues=[t["title"] for t in failed_tests] if failed_tests else [],
         )
+
+        # WebSocket: pipeline complete
+        try:
+            report_url = deployment.preview_url if deployment else f"/projects/{project.id}/delivery-report"
+            await send_pipeline_complete(str(project.id), report_url)
+        except Exception:
+            pass
 
     async def _all_tests_passed(self, project: Project) -> bool:
         """Check if all tests passed."""

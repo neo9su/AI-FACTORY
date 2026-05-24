@@ -58,6 +58,7 @@ class Executor:
         project: Project,
         task: Task,
         max_turns: int = 20,
+        error_context: Optional[str] = None,
     ) -> AgentRun:
         """
         Execute a task using LLM API to generate code.
@@ -66,14 +67,15 @@ class Executor:
             project: Project instance
             task: Task instance
             max_turns: Maximum iterations (unused in API mode, kept for interface compat)
+            error_context: Previous error log from failed tests — helps LLM fix precisely
 
         Returns:
             AgentRun: Agent run record with execution results
         """
         workspace = self.get_project_workspace(project)
 
-        # Build task prompt
-        prompt = self._build_task_prompt(task, project)
+        # Build task prompt (with error context if retrying)
+        prompt = self._build_task_prompt(task, project, error_context=error_context)
 
         # Create agent run record
         agent_run = AgentRun(
@@ -109,13 +111,14 @@ class Executor:
 
         return agent_run
 
-    def _build_task_prompt(self, task: Task, project: Project) -> str:
+    def _build_task_prompt(self, task: Task, project: Project, error_context: Optional[str] = None) -> str:
         """
         Build optimized LLM prompt from task details.
 
         Args:
             task: Task instance
             project: Project instance
+            error_context: Previous error log from failed tests (for retry)
 
         Returns:
             str: Formatted prompt for high-quality code generation
@@ -201,18 +204,37 @@ IMPORTANT:
 - Code must be immediately runnable
 - Return ONLY valid JSON, no markdown code blocks
 """
+        # Add error context for retry attempts
+        if error_context:
+            prompt += f"""
+## ⚠️ PREVIOUS ATTEMPT FAILED — FIX THESE ERRORS
+
+The previous code generation failed tests. Here is the error output:
+```
+{error_context[:2000]}
+```
+
+IMPORTANT: Analyze the errors above and fix ALL issues in your new output.
+Do NOT repeat the same mistakes. Focus on:
+1. The specific error messages and stack traces
+2. Missing imports or dependencies
+3. Incorrect function signatures or return types
+4. Logic errors identified by tests
+"""
         return prompt
 
     async def _call_llm(self, prompt: str, workspace: Path) -> str:
         """
-        Call LLM API with fallback support.
+        Call LLM API with fallback support and JSON validation retry.
+        
+        If the LLM response is not valid JSON, retries once with a fix-up prompt.
         
         Args:
             prompt: Task prompt
             workspace: Working directory context
             
         Returns:
-            str: LLM response content
+            str: LLM response content (validated as parseable JSON)
         """
         # Include workspace context if files exist
         context = ""
@@ -239,7 +261,7 @@ IMPORTANT:
                 max_tokens=8192,
                 temperature=0.1,
             )
-            return response.choices[0].message.content
+            result = response.choices[0].message.content
         except Exception as e:
             # Fallback to backup model
             if self.fallback_model and self.fallback_model != self.model:
@@ -249,8 +271,62 @@ IMPORTANT:
                     max_tokens=8192,
                     temperature=0.1,
                 )
-                return response.choices[0].message.content
-            raise
+                result = response.choices[0].message.content
+            else:
+                raise
+
+        # Validate JSON output — retry once if invalid
+        if not self._is_valid_file_json(result):
+            # Ask LLM to fix its output
+            fix_messages = messages + [
+                {"role": "assistant", "content": result},
+                {"role": "user", "content": (
+                    "Your response is NOT valid JSON or is missing the 'files' array. "
+                    "Please output ONLY a valid JSON object with this exact structure:\n"
+                    '{"files": [{"path": "...", "content": "..."}], "summary": "..."}\n'
+                    "No markdown, no code blocks, no extra text. Just raw JSON."
+                )},
+            ]
+            try:
+                fix_response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=fix_messages,
+                    max_tokens=8192,
+                    temperature=0.0,
+                )
+                fixed_result = fix_response.choices[0].message.content
+                if self._is_valid_file_json(fixed_result):
+                    return fixed_result
+            except Exception:
+                pass  # Use original result if retry fails
+
+        return result
+
+    def _is_valid_file_json(self, text: str) -> bool:
+        """
+        Check if text is valid JSON with a 'files' array.
+        
+        Returns:
+            bool: True if text parses as JSON with files array
+        """
+        try:
+            clean = text.strip()
+            if "```json" in clean:
+                clean = clean.split("```json")[1].split("```")[0].strip()
+            elif "```" in clean:
+                clean = clean.split("```")[1].split("```")[0].strip()
+            
+            parsed = json.loads(clean)
+            files = parsed.get("files", [])
+            if not isinstance(files, list) or len(files) == 0:
+                return False
+            # Check that each file has path and content
+            for f in files:
+                if "path" not in f or "content" not in f:
+                    return False
+            return True
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            return False
 
     async def _write_generated_files(self, workspace: Path, result: str) -> None:
         """
