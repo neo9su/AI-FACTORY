@@ -226,6 +226,14 @@ class Orchestrator:
             await self.notifier.send_stage_update(
                 self._notify_ctx(project, f"流水线异常中断：{str(e)}", error=str(e))
             )
+            # Webhook: pipeline failed
+            try:
+                await self.webhook.pipeline_failed(
+                    str(project.id), project.name,
+                    error=str(e), stage="unknown",
+                )
+            except Exception:
+                pass
             raise
 
     async def _stage_intake(self, project: Project) -> None:
@@ -236,6 +244,11 @@ class Orchestrator:
         await self.notifier.send_stage_update(
             self._notify_ctx(project, f"项目 '{project.name}' 已创建，开始需求分析。")
         )
+        # Webhook: pipeline started
+        try:
+            await self.webhook.pipeline_started(str(project.id), project.name)
+        except Exception:
+            pass
 
     async def _stage_planning(self, project: Project) -> None:
         """Planning stage: analyze requirements and generate tasks."""
@@ -700,12 +713,13 @@ class Orchestrator:
 
         # Webhook: pipeline completed
         try:
-            import time as _time
-            duration = _time.time() - (project.created_at.timestamp() if project.created_at else 0)
-            await self.webhook.notify_pipeline_completed(
-                str(project.id), project.name,
+            duration = (project.updated_at - project.created_at).total_seconds() if project.updated_at else 0
+            await self.webhook.pipeline_completed(
+                str(project.id),
+                project.name,
                 duration_seconds=duration,
-                repo_url=repo_url if isinstance(repo_url, str) else None,
+                repo_url=repo_url or "",
+                preview_url=deployment.preview_url if deployment else "",
             )
         except Exception:
             pass

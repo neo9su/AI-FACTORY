@@ -582,3 +582,51 @@ async def export_project_logs(
             "total_deployments": len(deployments),
         },
     }
+
+
+@router.post("/projects/{project_id}/rerun")
+async def rerun_project_pipeline(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """
+    Re-run the pipeline for a failed or delivered project.
+
+    Resets the project status to CREATED and enqueues a new pipeline run.
+    Useful for retrying after fixing configuration or for regenerating code.
+
+    Args:
+        project_id: Project UUID
+        db: Database session
+
+    Returns:
+        dict: Job information
+    """
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Only allow re-run for terminal states
+    terminal_states = [ProjectStatus.DELIVERED, ProjectStatus.FAILED, ProjectStatus.BLOCKED_BY_GATE]
+    if project.status not in terminal_states:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot re-run project in '{project.status.value}' state. Must be delivered, failed, or blocked.",
+        )
+
+    # Reset project status
+    project.status = ProjectStatus.CREATED
+    await db.commit()
+
+    # Enqueue pipeline job
+    pool = await get_arq_pool()
+    job = await pool.enqueue_job("run_project_pipeline", project_id)
+
+    return {
+        "status": "queued",
+        "project_id": project_id,
+        "job_id": job.job_id,
+        "message": f"Pipeline re-run started for '{project.name}'",
+    }
