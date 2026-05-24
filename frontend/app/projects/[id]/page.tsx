@@ -13,6 +13,9 @@ import { StatusBadge } from '@/components/status-badge';
 import { PipelineProgress } from '@/components/pipeline-progress';
 import { TaskList } from '@/components/task-list';
 import { AgentLogViewer } from '@/components/agent-log-viewer';
+import { LiveActivityFeed } from '@/components/live-activity-feed';
+import { CodePreview } from '@/components/code-preview';
+import { ReviewReportView } from '@/components/review-report';
 import { useWebSocket } from '@/lib/websocket';
 
 export default function ProjectDetailPage() {
@@ -24,10 +27,9 @@ export default function ProjectDetailPage() {
   const [testRuns, setTestRuns] = useState<TestRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showAgentLogs, setShowAgentLogs] = useState(false);
-  const [showTestResults, setShowTestResults] = useState(false);
+  const [activeTab, setActiveTab] = useState<'activity' | 'code' | 'tests' | 'review' | 'agents'>('activity');
 
-  const { messages, isConnected } = useWebSocket(projectId);
+  const { messages, lastEvent, isConnected } = useWebSocket(projectId);
 
   useEffect(() => {
     const fetchProject = async (): Promise<void> => {
@@ -50,26 +52,27 @@ export default function ProjectDetailPage() {
     fetchProject();
   }, [projectId]);
 
+  // Re-fetch on WebSocket events
   useEffect(() => {
-    if (messages.length > 0) {
-      const fetchUpdates = async (): Promise<void> => {
-        try {
-          const [projectData, agentRunsData, testRunsData] = await Promise.all([
-            projectsApi.get(projectId),
-            projectsApi.getAgentRuns(projectId),
-            projectsApi.getTestRuns(projectId),
-          ]);
-          setProject(projectData);
-          setAgentRuns(agentRunsData);
-          setTestRuns(testRunsData);
-        } catch (err) {
-          console.error('Failed to fetch updates:', err);
-        }
-      };
+    if (!lastEvent) return;
 
-      fetchUpdates();
-    }
-  }, [messages, projectId]);
+    const fetchUpdates = async (): Promise<void> => {
+      try {
+        const [projectData, agentRunsData, testRunsData] = await Promise.all([
+          projectsApi.get(projectId),
+          projectsApi.getAgentRuns(projectId),
+          projectsApi.getTestRuns(projectId),
+        ]);
+        setProject(projectData);
+        setAgentRuns(agentRunsData);
+        setTestRuns(testRunsData);
+      } catch {
+        // Silent fail on update
+      }
+    };
+
+    fetchUpdates();
+  }, [lastEvent, projectId]);
 
   if (loading) {
     return (
@@ -100,6 +103,14 @@ export default function ProjectDetailPage() {
 
   const passedTests = testRuns.filter((t) => t.status === 'passed').length;
   const failedTests = testRuns.filter((t) => t.status === 'failed').length;
+
+  const tabs = [
+    { key: 'activity', label: '🔴 Live Activity', count: messages.length },
+    { key: 'code', label: '📄 Code', count: null },
+    { key: 'tests', label: '🧪 Tests', count: testRuns.length },
+    { key: 'review', label: '🔍 Review', count: null },
+    { key: 'agents', label: '🤖 Agents', count: agentRuns.length },
+  ] as const;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -133,7 +144,7 @@ export default function ProjectDetailPage() {
               <div className="flex items-center space-x-2 text-sm">
                 <span
                   className={`w-2 h-2 rounded-full ${
-                    isConnected ? 'bg-green-500' : 'bg-gray-400'
+                    isConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
                   }`}
                 />
                 <span className="text-gray-600">
@@ -178,62 +189,72 @@ export default function ProjectDetailPage() {
           <TaskList tasks={project.tasks} />
         </div>
 
-        {/* Agent Logs Section */}
-        <div className="bg-white rounded-xl shadow-md p-6 mb-6">
-          <button
-            onClick={() => setShowAgentLogs(!showAgentLogs)}
-            className="w-full flex items-center justify-between mb-4"
-          >
-            <h2 className="text-xl font-bold text-gray-900">
-              Agent Runs ({agentRuns.length})
-            </h2>
-            <span className="text-blue-600">
-              {showAgentLogs ? 'Hide' : 'Show'}
-            </span>
-          </button>
-          {showAgentLogs && <AgentLogViewer agentRuns={agentRuns} />}
-        </div>
+        {/* Tabbed Content */}
+        <div className="bg-white rounded-xl shadow-md overflow-hidden mb-6">
+          {/* Tab Header */}
+          <div className="flex border-b border-gray-200 overflow-x-auto">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`px-6 py-3 text-sm font-medium whitespace-nowrap transition-colors ${
+                  activeTab === tab.key
+                    ? 'border-b-2 border-blue-600 text-blue-600 bg-blue-50/50'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                {tab.label}
+                {tab.count !== null && tab.count > 0 && (
+                  <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-gray-200 text-gray-700">
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
 
-        {/* Test Results Section */}
-        <div className="bg-white rounded-xl shadow-md p-6 mb-6">
-          <button
-            onClick={() => setShowTestResults(!showTestResults)}
-            className="w-full flex items-center justify-between mb-4"
-          >
-            <h2 className="text-xl font-bold text-gray-900">
-              Test Results ({testRuns.length})
-            </h2>
-            <span className="text-blue-600">
-              {showTestResults ? 'Hide' : 'Show'}
-            </span>
-          </button>
-          {showTestResults && (
-            <div className="space-y-2">
-              {testRuns.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">No test runs yet.</p>
-              ) : (
-                testRuns.map((test) => (
-                  <div
-                    key={test.id}
-                    className="border border-gray-200 rounded-lg p-4"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div>
-                        <h4 className="font-medium text-gray-900">{test.test_type}</h4>
-                        <p className="text-sm text-gray-500 font-mono">{test.command}</p>
+          {/* Tab Content */}
+          <div className="p-6">
+            {activeTab === 'activity' && (
+              <LiveActivityFeed events={messages} isConnected={isConnected} />
+            )}
+            {activeTab === 'code' && (
+              <CodePreview projectId={projectId} />
+            )}
+            {activeTab === 'tests' && (
+              <div className="space-y-2">
+                {testRuns.length === 0 ? (
+                  <p className="text-center py-8 text-gray-500">No test runs yet.</p>
+                ) : (
+                  testRuns.map((test) => (
+                    <div
+                      key={test.id}
+                      className="border border-gray-200 rounded-lg p-4"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <h4 className="font-medium text-gray-900">{test.test_type}</h4>
+                          <p className="text-sm text-gray-500 font-mono">{test.command}</p>
+                        </div>
+                        <StatusBadge status={test.status} />
                       </div>
-                      <StatusBadge status={test.status} />
+                      {test.error_log && (
+                        <div className="mt-2 p-3 bg-red-50 rounded text-sm text-red-800 font-mono overflow-x-auto whitespace-pre-wrap">
+                          {test.error_log}
+                        </div>
+                      )}
                     </div>
-                    {test.error_log && (
-                      <div className="mt-2 p-3 bg-red-50 rounded text-sm text-red-800 font-mono overflow-x-auto">
-                        {test.error_log}
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          )}
+                  ))
+                )}
+              </div>
+            )}
+            {activeTab === 'review' && (
+              <ReviewReportView projectId={projectId} />
+            )}
+            {activeTab === 'agents' && (
+              <AgentLogViewer agentRuns={agentRuns} />
+            )}
+          </div>
         </div>
 
         {/* Delivery Report Link */}

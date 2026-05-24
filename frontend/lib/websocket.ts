@@ -1,71 +1,94 @@
-import { useEffect, useRef, useState } from 'react';
-import { io, type Socket } from 'socket.io-client';
+'use client';
 
-const WS_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { useEffect, useRef, useState, useCallback } from 'react';
 
-export interface WebSocketMessage {
+const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+export interface WSEvent {
   type: string;
-  data: unknown;
-  timestamp: string;
+  [key: string]: unknown;
 }
 
+/**
+ * Native WebSocket hook compatible with FastAPI WebSocket endpoints.
+ * Connects to ws://<host>/ws/<project_id>
+ * Auto-reconnects on disconnect with exponential backoff.
+ */
 export function useWebSocket(projectId: string | null): {
-  messages: WebSocketMessage[];
+  messages: WSEvent[];
+  lastEvent: WSEvent | null;
   isConnected: boolean;
   sendMessage: (message: unknown) => void;
 } {
-  const [messages, setMessages] = useState<WebSocketMessage[]>([]);
+  const [messages, setMessages] = useState<WSEvent[]>([]);
+  const [lastEvent, setLastEvent] = useState<WSEvent | null>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const socketRef = useRef<Socket | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectDelay = useRef(1000);
 
-  useEffect(() => {
+  const connect = useCallback(() => {
     if (!projectId) return;
 
-    const socket = io(WS_URL, {
-      path: '/ws',
-      query: { project_id: projectId },
-      transports: ['websocket', 'polling'],
-    });
+    // Convert http(s) to ws(s)
+    const wsUrl = WS_BASE.replace(/^http/, 'ws') + `/ws/${projectId}`;
 
-    socketRef.current = socket;
+    try {
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
 
-    socket.on('connect', () => {
-      setIsConnected(true);
-      console.log('WebSocket connected for project:', projectId);
-    });
+      ws.onopen = () => {
+        setIsConnected(true);
+        reconnectDelay.current = 1000; // Reset backoff
+      };
 
-    socket.on('disconnect', () => {
-      setIsConnected(false);
-      console.log('WebSocket disconnected');
-    });
+      ws.onmessage = (event) => {
+        try {
+          const data: WSEvent = JSON.parse(event.data);
+          setMessages((prev) => [...prev.slice(-99), data]); // Keep last 100
+          setLastEvent(data);
+        } catch {
+          // Ignore non-JSON messages
+        }
+      };
 
-    socket.on('message', (data: WebSocketMessage) => {
-      setMessages((prev) => [...prev, data]);
-    });
+      ws.onclose = () => {
+        setIsConnected(false);
+        wsRef.current = null;
+        // Auto-reconnect with exponential backoff (max 30s)
+        reconnectTimer.current = setTimeout(() => {
+          reconnectDelay.current = Math.min(reconnectDelay.current * 2, 30000);
+          connect();
+        }, reconnectDelay.current);
+      };
 
-    socket.on('project_update', (data: WebSocketMessage) => {
-      setMessages((prev) => [...prev, { ...data, type: 'project_update' }]);
-    });
-
-    socket.on('task_update', (data: WebSocketMessage) => {
-      setMessages((prev) => [...prev, { ...data, type: 'task_update' }]);
-    });
-
-    socket.on('agent_update', (data: WebSocketMessage) => {
-      setMessages((prev) => [...prev, { ...data, type: 'agent_update' }]);
-    });
-
-    return () => {
-      socket.disconnect();
-      socketRef.current = null;
-    };
+      ws.onerror = () => {
+        ws.close();
+      };
+    } catch {
+      // Connection failed, will retry via onclose
+    }
   }, [projectId]);
 
-  const sendMessage = (message: unknown): void => {
-    if (socketRef.current?.connected) {
-      socketRef.current.emit('message', message);
-    }
-  };
+  useEffect(() => {
+    connect();
 
-  return { messages, isConnected, sendMessage };
+    return () => {
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current);
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [connect]);
+
+  const sendMessage = useCallback((message: unknown): void => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(message));
+    }
+  }, []);
+
+  return { messages, lastEvent, isConnected, sendMessage };
 }

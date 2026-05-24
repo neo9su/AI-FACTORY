@@ -80,6 +80,43 @@ export interface DeliveryReport {
   created_at: string;
 }
 
+export interface ReviewIssue {
+  severity: string;
+  category: string;
+  file: string;
+  line: number | null;
+  description: string;
+  suggestion: string;
+}
+
+export interface ReviewReport {
+  id: string;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  review: {
+    passed: boolean;
+    score: number;
+    issues: ReviewIssue[];
+    summary: string;
+    suggestions: string[];
+  };
+}
+
+export interface WorkspaceFile {
+  path: string;
+  size: number;
+  extension: string;
+}
+
+export interface FileContent {
+  path: string;
+  content: string;
+  size: number;
+  extension: string;
+  lines: number;
+}
+
 export const projectsApi = {
   create: async (data: ProjectCreate): Promise<Project> => {
     const response = await api.post<Project>('/projects', data);
@@ -118,6 +155,21 @@ export const projectsApi = {
 
   getDeliveryReport: async (id: string): Promise<DeliveryReport> => {
     const response = await api.get<DeliveryReport>(`/projects/${id}/delivery-report`);
+    return response.data;
+  },
+
+  getReview: async (id: string): Promise<ReviewReport> => {
+    const response = await api.get<ReviewReport>(`/projects/${id}/review`);
+    return response.data;
+  },
+
+  getFiles: async (id: string): Promise<WorkspaceFile[]> => {
+    const response = await api.get<WorkspaceFile[]>(`/projects/${id}/files`);
+    return response.data;
+  },
+
+  getFileContent: async (id: string, filePath: string): Promise<FileContent> => {
+    const response = await api.get<FileContent>(`/projects/${id}/files/${filePath}`);
     return response.data;
   },
 };

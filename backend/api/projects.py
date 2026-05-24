@@ -370,3 +370,41 @@ async def get_delivery_report(
         "final_status": report.final_status,
         "created_at": report.created_at.isoformat(),
     }
+
+
+@router.get("/projects/{project_id}/review")
+async def get_review_report(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Get the code review report for a project.
+
+    Returns the reviewer's structured output (score, issues, suggestions).
+    """
+    import json
+
+    result = await db.execute(
+        select(AgentRun)
+        .where(AgentRun.project_id == project_id)
+        .where(AgentRun.agent_name == "reviewer")
+        .order_by(AgentRun.started_at.desc())
+    )
+    review_run = result.scalar_one_or_none()
+
+    if not review_run:
+        raise HTTPException(status_code=404, detail="No review report found")
+
+    # Parse the structured review output
+    try:
+        review_data = json.loads(review_run.output) if review_run.output else {}
+    except (json.JSONDecodeError, TypeError):
+        review_data = {"summary": review_run.output or "No review data"}
+
+    return {
+        "id": review_run.id,
+        "status": review_run.status.value,
+        "started_at": review_run.started_at.isoformat() if review_run.started_at else None,
+        "finished_at": review_run.finished_at.isoformat() if review_run.finished_at else None,
+        "review": review_data,
+    }
