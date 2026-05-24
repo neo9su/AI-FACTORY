@@ -123,8 +123,13 @@ export const projectsApi = {
     return response.data;
   },
 
-  list: async (): Promise<Project[]> => {
-    const response = await api.get<Project[]>('/projects');
+  list: async (params?: { status?: string; search?: string; limit?: number }): Promise<Project[]> => {
+    const queryParams = new URLSearchParams();
+    if (params?.status) queryParams.set('status', params.status);
+    if (params?.search) queryParams.set('search', params.search);
+    if (params?.limit) queryParams.set('limit', String(params.limit));
+    const qs = queryParams.toString();
+    const response = await api.get<Project[]>(`/projects${qs ? `?${qs}` : ''}`);
     return response.data;
   },
 

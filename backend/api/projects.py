@@ -35,6 +35,7 @@ class ProjectCreate(BaseModel):
     user_requirement: str
     goal: Optional[str] = None
     tech_stack: Optional[str] = None
+    template: Optional[str] = None  # e.g., "python-cli", "react-app"
 
 
 class ProjectResponse(BaseModel):
@@ -83,6 +84,18 @@ async def create_project(
         tech_stack=project_data.tech_stack,
         status=ProjectStatus.CREATED,
     )
+
+    # Apply template if specified
+    if project_data.template:
+        from backend.core.templates import get_template, get_template_prompt
+        template = get_template(project_data.template)
+        if template:
+            # Use template tech_stack if not explicitly provided
+            if not project.tech_stack:
+                project.tech_stack = template["tech_stack"]
+            # Append template guidance to requirement
+            template_prompt = get_template_prompt(project_data.template)
+            project.user_requirement = project.user_requirement + "\n" + template_prompt
 
     db.add(project)
     await db.commit()
@@ -423,3 +436,51 @@ async def get_review_report(
         "finished_at": review_run.finished_at.isoformat() if review_run.finished_at else None,
         "review": review_data,
     }
+
+
+@router.get("/templates")
+async def list_templates() -> list[dict[str, Any]]:
+    """
+    List available project templates.
+
+    Returns:
+        list: Available templates with name, description, tech_stack
+    """
+    from backend.core.templates import list_templates as _list_templates
+    return _list_templates()
+
+
+@router.delete("/projects/{project_id}")
+async def delete_project(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """
+    Soft-delete a project and clean up its workspace.
+
+    Args:
+        project_id: Project UUID
+        db: Database session
+
+    Returns:
+        dict: Confirmation message
+    """
+    import shutil
+    from pathlib import Path
+
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Clean up workspace
+    workspace = Path("./workspace") / project_id
+    if workspace.exists():
+        shutil.rmtree(workspace, ignore_errors=True)
+
+    # Delete project (cascades to tasks, agent_runs, test_runs, etc.)
+    await db.delete(project)
+    await db.commit()
+
+    return {"message": f"Project '{project.name}' deleted successfully"}

@@ -24,6 +24,7 @@ from backend.api.ws import (
 )
 from backend.core.executor import Executor
 from backend.core.gatekeeper import Gatekeeper, PermissionDeniedError
+from backend.core.git_manager import GitManager
 from backend.core.qqbot_notifier import QQBotNotifier as FeishuNotifier, NotifyContext, get_notifier
 from backend.core.planner import Planner
 from backend.core.reviewer import Reviewer
@@ -60,6 +61,7 @@ class Orchestrator:
         self.executor = Executor()
         self.tester = Tester()
         self.reviewer = Reviewer()
+        self.git = GitManager()
         self.notifier: FeishuNotifier = notifier or get_notifier()
 
     def _notify_ctx(self, project: "Project", message: str, **kwargs: Any) -> NotifyContext:
@@ -130,6 +132,13 @@ class Orchestrator:
             await _timed_stage(self._stage_intake(project), "intake")
             await _timed_stage(self._stage_planning(project), "planning")
             await _timed_stage(self._stage_developing(project, policy), "developing")
+
+            # Git: initialize repo after code generation
+            try:
+                await self.git.init_repo(str(project.id), project.name)
+            except Exception:
+                pass  # Git failures never block pipeline
+
             await _timed_stage(self._stage_testing(project), "testing")
 
             # Fixing loop if tests fail
@@ -145,6 +154,16 @@ class Orchestrator:
                     return
 
                 await _timed_stage(self._stage_fixing(project, policy), f"fixing-{fix_round}")
+
+                # Git: commit fix changes
+                try:
+                    await self.git.commit_changes(
+                        str(project.id),
+                        f"fix: automated fix round {fix_round} by AI Factory",
+                    )
+                except Exception:
+                    pass
+
                 await _timed_stage(self._stage_testing(project), f"testing-{fix_round}")
 
             await _timed_stage(self._stage_reviewing(project), "reviewing")
@@ -650,6 +669,20 @@ class Orchestrator:
             await send_pipeline_complete(str(project.id), report_url)
         except Exception:
             pass
+
+        # Git: push to GitHub if configured
+        try:
+            repo_url = await self.git.push_to_github(
+                str(project.id), project.name, private=True
+            )
+            if repo_url:
+                await self._ws_log(project, "git", f"代码已推送到 GitHub: {repo_url}")
+                # Update deployment with repo URL
+                if deployment:
+                    deployment.logs = (deployment.logs or "") + f"\nGitHub: {repo_url}"
+                    await self.db.commit()
+        except Exception:
+            pass  # Git push failure is non-critical
 
     async def _all_tests_passed(self, project: Project) -> bool:
         """Check if all tests passed."""
