@@ -484,3 +484,101 @@ async def delete_project(
     await db.commit()
 
     return {"message": f"Project '{project.name}' deleted successfully"}
+
+
+@router.get("/projects/{project_id}/logs/export")
+async def export_project_logs(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Export all execution logs for a project as structured JSON.
+
+    Includes: project info, all agent runs, test runs, and deployment info.
+    Frontend can render or download this as a file.
+
+    Args:
+        project_id: Project UUID
+        db: Database session
+
+    Returns:
+        dict: Complete execution log export
+    """
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Agent runs
+    runs_result = await db.execute(
+        select(AgentRun)
+        .where(AgentRun.project_id == project_id)
+        .order_by(AgentRun.started_at)
+    )
+    agent_runs = [
+        {
+            "id": str(r.id),
+            "agent_name": r.agent_name,
+            "input": r.input,
+            "output": (r.output or "")[:2000],
+            "logs": r.logs,
+            "status": r.status.value,
+            "started_at": r.started_at.isoformat() if r.started_at else None,
+            "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+        }
+        for r in runs_result.scalars().all()
+    ]
+
+    # Test runs
+    tests_result = await db.execute(
+        select(TestRun)
+        .where(TestRun.project_id == project_id)
+        .order_by(TestRun.created_at)
+    )
+    test_runs = [
+        {
+            "id": str(t.id),
+            "test_type": t.test_type,
+            "command": t.command,
+            "status": t.status.value,
+            "result": (t.result or "")[:1000],
+            "error_log": (t.error_log or "")[:1000],
+        }
+        for t in tests_result.scalars().all()
+    ]
+
+    # Deployment
+    deploy_result = await db.execute(
+        select(Deployment)
+        .where(Deployment.project_id == project_id)
+        .order_by(Deployment.created_at.desc())
+    )
+    deployments = [
+        {
+            "id": str(d.id),
+            "environment": d.environment,
+            "status": d.status.value,
+            "preview_url": d.preview_url,
+            "logs": d.logs,
+        }
+        for d in deploy_result.scalars().all()
+    ]
+
+    return {
+        "project": {
+            "id": str(project.id),
+            "name": project.name,
+            "status": project.status.value,
+            "tech_stack": project.tech_stack,
+            "created_at": project.created_at.isoformat(),
+            "updated_at": project.updated_at.isoformat(),
+        },
+        "agent_runs": agent_runs,
+        "test_runs": test_runs,
+        "deployments": deployments,
+        "summary": {
+            "total_agent_runs": len(agent_runs),
+            "total_test_runs": len(test_runs),
+            "total_deployments": len(deployments),
+        },
+    }

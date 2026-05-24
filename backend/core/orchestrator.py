@@ -29,6 +29,7 @@ from backend.core.qqbot_notifier import QQBotNotifier as FeishuNotifier, NotifyC
 from backend.core.planner import Planner
 from backend.core.reviewer import Reviewer
 from backend.core.tester import Tester
+from backend.core.webhook import get_webhook_notifier
 from backend.models.project import (
     AgentRun,
     AgentStatus,
@@ -62,6 +63,7 @@ class Orchestrator:
         self.tester = Tester()
         self.reviewer = Reviewer()
         self.git = GitManager()
+        self.webhook = get_webhook_notifier()
         self.notifier: FeishuNotifier = notifier or get_notifier()
 
     def _notify_ctx(self, project: "Project", message: str, **kwargs: Any) -> NotifyContext:
@@ -116,6 +118,11 @@ class Orchestrator:
         pipeline_start = time.time()
 
         try:
+            # Webhook: pipeline started
+            try:
+                await self.webhook.notify_pipeline_started(str(project.id), project.name)
+            except Exception:
+                pass
             # Helper: run a stage with individual timeout
             async def _timed_stage(coro, stage_name: str):
                 elapsed = time.time() - pipeline_start
@@ -184,6 +191,13 @@ class Orchestrator:
             await self.notifier.send_stage_update(
                 self._notify_ctx(project, f"⏰ 流水线超时（{elapsed:.0f}s）：{str(e)}", error=str(e))
             )
+            # Webhook: pipeline failed
+            try:
+                await self.webhook.notify_pipeline_failed(
+                    str(project.id), project.name, str(e), stage="timeout"
+                )
+            except Exception:
+                pass
         except PermissionDeniedError as e:
             project.status = ProjectStatus.BLOCKED_BY_GATE
             await self._log_agent_run(
@@ -682,7 +696,19 @@ class Orchestrator:
                     deployment.logs = (deployment.logs or "") + f"\nGitHub: {repo_url}"
                     await self.db.commit()
         except Exception:
-            pass  # Git push failure is non-critical
+            repo_url = None
+
+        # Webhook: pipeline completed
+        try:
+            import time as _time
+            duration = _time.time() - (project.created_at.timestamp() if project.created_at else 0)
+            await self.webhook.notify_pipeline_completed(
+                str(project.id), project.name,
+                duration_seconds=duration,
+                repo_url=repo_url if isinstance(repo_url, str) else None,
+            )
+        except Exception:
+            pass
 
     async def _all_tests_passed(self, project: Project) -> bool:
         """Check if all tests passed."""

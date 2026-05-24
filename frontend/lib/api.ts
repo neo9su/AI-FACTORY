@@ -15,6 +15,7 @@ export interface ProjectCreate {
   user_requirement: string;
   goal?: string;
   tech_stack?: string;
+  template?: string;
 }
 
 export interface Project {
