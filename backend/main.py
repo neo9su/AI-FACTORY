@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from backend.api import analytics, notify, opportunities, platform_login, projects, publish, tasks, trends, workspace, ws
+from backend.api import analytics, notify, opportunities, platform_login, projects, publish, stats, tasks, trends, workspace, ws
 from backend.db.session import engine
 from backend.models.base import Base
 
@@ -60,6 +60,7 @@ app.include_router(opportunities.router, prefix="/api/v1", tags=["opportunities"
 app.include_router(analytics.router, prefix="/api/v1", tags=["analytics"])
 app.include_router(publish.router, prefix="/api/v1", tags=["publish"])
 app.include_router(workspace.router, prefix="/api/v1", tags=["workspace"])
+app.include_router(stats.router, prefix="/api/v1", tags=["stats"])
 app.include_router(platform_login.router, prefix="/api", tags=["platform-login"])
 
 

@@ -139,6 +139,12 @@ export default function Home() {
         {/* CTA Section */}
         <div className="text-center mt-16">
           <Link
+            href="/dashboard"
+            className="inline-block px-6 py-3 bg-white text-indigo-600 text-lg font-semibold rounded-lg hover:bg-gray-50 transition-colors shadow-md mr-4"
+          >
+            📊 Dashboard
+          </Link>
+          <Link
             href="/projects"
             className="inline-block px-6 py-3 bg-white text-blue-600 text-lg font-semibold rounded-lg hover:bg-gray-50 transition-colors shadow-md mr-4"
           >

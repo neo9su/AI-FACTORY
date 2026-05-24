@@ -246,6 +246,42 @@ export const analyticsApi = {
     );
     return res.data;
   },
+
+  // ───── Dashboard Stats ─────
+
+  getOverviewStats: async (): Promise<OverviewStats> => {
+    const res = await api.get<OverviewStats>('/stats/overview');
+    return res.data;
+  },
+
+  getTimeline: async (days = 7): Promise<TimelineEntry[]> => {
+    const res = await api.get<TimelineEntry[]>(`/stats/timeline?days=${days}`);
+    return res.data;
+  },
 };
+
+// ───── Stats types ─────
+
+export interface OverviewStats {
+  total_projects: number;
+  success_rate: number;
+  avg_duration_seconds: number;
+  status_distribution: Record<string, number>;
+  token_usage: {
+    total_tokens: number;
+    total_llm_calls: number;
+    avg_tokens_per_call: number;
+  };
+  recent: {
+    projects_last_24h: number;
+    total_tasks: number;
+    total_test_runs: number;
+  };
+}
+
+export interface TimelineEntry {
+  date: string;
+  count: number;
+}
 
 export default api;

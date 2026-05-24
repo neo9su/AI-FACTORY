@@ -38,6 +38,9 @@ class Executor:
         self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model = os.getenv("LLM_MODEL", "deepseek-chat")
         self.fallback_model = os.getenv("LLM_FALLBACK_MODEL", "us.anthropic.claude-opus-4-6")
+        
+        # Token usage tracking for the last LLM call
+        self._last_usage: dict = {}
 
     def get_project_workspace(self, project: Project) -> Path:
         """
@@ -94,9 +97,22 @@ class Executor:
             # Write generated code to workspace
             await self._write_generated_files(workspace, result)
 
+            # Build usage summary
+            usage_info = ""
+            if self._last_usage:
+                usage_info = (
+                    f" | model={self._last_usage.get('model_used', 'unknown')}"
+                    f" tokens={self._last_usage.get('total_tokens', 0)}"
+                    f" (prompt={self._last_usage.get('prompt_tokens', 0)}"
+                    f" completion={self._last_usage.get('completion_tokens', 0)})"
+                    f" latency={self._last_usage.get('latency_ms', 0)}ms"
+                )
+                if self._last_usage.get("retried"):
+                    usage_info += " [retried]"
+
             # Update agent run with results
             agent_run.output = result
-            agent_run.logs = f"Generated code written to {workspace}"
+            agent_run.logs = f"Generated code written to {workspace}{usage_info}"
             agent_run.status = AgentStatus.SUCCESS
             agent_run.finished_at = datetime.utcnow()
 
@@ -225,9 +241,10 @@ Do NOT repeat the same mistakes. Focus on:
 
     async def _call_llm(self, prompt: str, workspace: Path) -> str:
         """
-        Call LLM API with fallback support and JSON validation retry.
+        Call LLM API with fallback support, JSON validation retry, and token tracking.
         
         If the LLM response is not valid JSON, retries once with a fix-up prompt.
+        Tracks token usage (prompt + completion) and latency in self._last_usage.
         
         Args:
             prompt: Task prompt
@@ -236,6 +253,8 @@ Do NOT repeat the same mistakes. Focus on:
         Returns:
             str: LLM response content (validated as parseable JSON)
         """
+        import time
+
         # Include workspace context if files exist
         context = ""
         existing_files = list(workspace.rglob("*"))
@@ -254,6 +273,18 @@ Do NOT repeat the same mistakes. Focus on:
             {"role": "user", "content": prompt + context},
         ]
 
+        # Reset usage tracking for this call
+        self._last_usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "model_used": self.model,
+            "latency_ms": 0,
+            "retried": False,
+        }
+
+        start_time = time.time()
+
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -262,9 +293,15 @@ Do NOT repeat the same mistakes. Focus on:
                 temperature=0.1,
             )
             result = response.choices[0].message.content
+            # Track usage
+            if response.usage:
+                self._last_usage["prompt_tokens"] += response.usage.prompt_tokens or 0
+                self._last_usage["completion_tokens"] += response.usage.completion_tokens or 0
+                self._last_usage["total_tokens"] += response.usage.total_tokens or 0
         except Exception as e:
             # Fallback to backup model
             if self.fallback_model and self.fallback_model != self.model:
+                self._last_usage["model_used"] = self.fallback_model
                 response = await self.client.chat.completions.create(
                     model=self.fallback_model,
                     messages=messages,
@@ -272,11 +309,16 @@ Do NOT repeat the same mistakes. Focus on:
                     temperature=0.1,
                 )
                 result = response.choices[0].message.content
+                if response.usage:
+                    self._last_usage["prompt_tokens"] += response.usage.prompt_tokens or 0
+                    self._last_usage["completion_tokens"] += response.usage.completion_tokens or 0
+                    self._last_usage["total_tokens"] += response.usage.total_tokens or 0
             else:
                 raise
 
         # Validate JSON output — retry once if invalid
         if not self._is_valid_file_json(result):
+            self._last_usage["retried"] = True
             # Ask LLM to fix its output
             fix_messages = messages + [
                 {"role": "assistant", "content": result},
@@ -295,11 +337,17 @@ Do NOT repeat the same mistakes. Focus on:
                     temperature=0.0,
                 )
                 fixed_result = fix_response.choices[0].message.content
+                if fix_response.usage:
+                    self._last_usage["prompt_tokens"] += fix_response.usage.prompt_tokens or 0
+                    self._last_usage["completion_tokens"] += fix_response.usage.completion_tokens or 0
+                    self._last_usage["total_tokens"] += fix_response.usage.total_tokens or 0
                 if self._is_valid_file_json(fixed_result):
+                    self._last_usage["latency_ms"] = int((time.time() - start_time) * 1000)
                     return fixed_result
             except Exception:
                 pass  # Use original result if retry fails
 
+        self._last_usage["latency_ms"] = int((time.time() - start_time) * 1000)
         return result
 
     def _is_valid_file_json(self, text: str) -> bool:

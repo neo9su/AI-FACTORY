@@ -95,22 +95,37 @@ async def create_project(
 async def list_projects(
     skip: int = 0,
     limit: int = 100,
+    status: Optional[str] = None,
+    search: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ) -> list[Project]:
     """
-    List all projects.
+    List all projects with optional filtering.
 
     Args:
         skip: Number of records to skip
         limit: Maximum number of records to return
+        status: Filter by project status (e.g. "delivered", "failed")
+        search: Search by project name (case-insensitive)
         db: Database session
 
     Returns:
         list[Project]: List of projects
     """
-    result = await db.execute(
-        select(Project).order_by(Project.created_at.desc()).offset(skip).limit(limit)
-    )
+    query = select(Project)
+
+    if status:
+        try:
+            status_enum = ProjectStatus(status)
+            query = query.where(Project.status == status_enum)
+        except ValueError:
+            pass  # Ignore invalid status filter
+
+    if search:
+        query = query.where(Project.name.ilike(f"%{search}%"))
+
+    query = query.order_by(Project.created_at.desc()).offset(skip).limit(limit)
+    result = await db.execute(query)
     projects = result.scalars().all()
     return list(projects)
 

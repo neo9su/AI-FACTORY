@@ -7,6 +7,7 @@ intake -> planning -> developing -> testing -> fixing -> reviewing -> deploying 
 Now with real-time WebSocket event broadcasting for frontend live updates.
 """
 import asyncio
+import os
 from datetime import datetime
 from typing import Any, Optional
 
@@ -87,11 +88,19 @@ class Orchestrator:
 
     async def run_pipeline(self, project_id: str) -> None:
         """
-        Run the complete pipeline for a project.
+        Run the complete pipeline for a project with global timeout protection.
 
         Args:
             project_id: Project UUID
+
+        Raises:
+            asyncio.TimeoutError: If the total pipeline exceeds PIPELINE_TIMEOUT_SECONDS
         """
+        import time
+
+        PIPELINE_TIMEOUT_SECONDS = int(os.environ.get("PIPELINE_TIMEOUT", "600"))  # 10 min default
+        STAGE_TIMEOUT_SECONDS = int(os.environ.get("STAGE_TIMEOUT", "180"))  # 3 min per stage
+
         # Load project
         result = await self.db.execute(select(Project).where(Project.id == project_id))
         project = result.scalar_one_or_none()
@@ -102,15 +111,31 @@ class Orchestrator:
         # Load or create permission policy
         policy = await self._get_or_create_policy(project)
 
+        pipeline_start = time.time()
+
         try:
+            # Helper: run a stage with individual timeout
+            async def _timed_stage(coro, stage_name: str):
+                elapsed = time.time() - pipeline_start
+                remaining = PIPELINE_TIMEOUT_SECONDS - elapsed
+                if remaining <= 0:
+                    raise asyncio.TimeoutError(f"Pipeline global timeout ({PIPELINE_TIMEOUT_SECONDS}s) exceeded at stage: {stage_name}")
+                timeout = min(STAGE_TIMEOUT_SECONDS, remaining)
+                try:
+                    return await asyncio.wait_for(coro, timeout=timeout)
+                except asyncio.TimeoutError:
+                    raise asyncio.TimeoutError(f"Stage '{stage_name}' timed out after {timeout:.0f}s")
+
             # State machine stages
-            await self._stage_intake(project)
-            await self._stage_planning(project)
-            await self._stage_developing(project, policy)
-            await self._stage_testing(project)
+            await _timed_stage(self._stage_intake(project), "intake")
+            await _timed_stage(self._stage_planning(project), "planning")
+            await _timed_stage(self._stage_developing(project, policy), "developing")
+            await _timed_stage(self._stage_testing(project), "testing")
 
             # Fixing loop if tests fail
+            fix_round = 0
             while not await self._all_tests_passed(project):
+                fix_round += 1
                 if not await self._can_retry(project, policy):
                     project.status = ProjectStatus.FAILED
                     await self.db.commit()
@@ -119,13 +144,27 @@ class Orchestrator:
                     )
                     return
 
-                await self._stage_fixing(project, policy)
-                await self._stage_testing(project)
+                await _timed_stage(self._stage_fixing(project, policy), f"fixing-{fix_round}")
+                await _timed_stage(self._stage_testing(project), f"testing-{fix_round}")
 
-            await self._stage_reviewing(project)
-            await self._stage_deploying(project, policy)
-            await self._stage_delivered(project)
+            await _timed_stage(self._stage_reviewing(project), "reviewing")
+            await _timed_stage(self._stage_deploying(project, policy), "deploying")
+            await _timed_stage(self._stage_delivered(project), "delivered")
 
+        except asyncio.TimeoutError as e:
+            project.status = ProjectStatus.FAILED
+            elapsed = time.time() - pipeline_start
+            await self._log_agent_run(
+                project,
+                "orchestrator",
+                "Pipeline timeout",
+                f"Pipeline timed out after {elapsed:.1f}s: {str(e)}",
+                AgentStatus.TIMEOUT,
+            )
+            await self.db.commit()
+            await self.notifier.send_stage_update(
+                self._notify_ctx(project, f"⏰ 流水线超时（{elapsed:.0f}s）：{str(e)}", error=str(e))
+            )
         except PermissionDeniedError as e:
             project.status = ProjectStatus.BLOCKED_BY_GATE
             await self._log_agent_run(
@@ -239,58 +278,83 @@ class Orchestrator:
         project: Project,
         policy: PermissionPolicy,
     ) -> None:
-        """Developing stage: execute all tasks."""
+        """Developing stage: execute tasks with parallel execution for independent tasks.
+
+        Tasks without dependencies (or whose dependencies are already met) are
+        executed concurrently using asyncio.gather. Tasks with unmet dependencies
+        wait until their predecessors complete, then run in the next wave.
+        This dramatically reduces total pipeline time for multi-task projects.
+        """
         project.status = ProjectStatus.DEVELOPING
         await self.db.commit()
         await self._ws_status(project)
-        await self._ws_log(project, "executor", "AI 开始执行开发任务...")
+        await self._ws_log(project, "executor", "AI 开始并行执行开发任务...")
         await self.notifier.send_stage_update(
-            self._notify_ctx(project, "Claude Code 开始执行开发任务...")
+            self._notify_ctx(project, "AI 开始并行执行开发任务（无依赖任务并发）...")
         )
 
         # Load tasks
         result = await self.db.execute(
             select(Task).where(Task.project_id == project.id).order_by(Task.priority)
         )
-        tasks = result.scalars().all()
+        tasks = list(result.scalars().all())
 
-        # Execute tasks in priority order
-        for task in tasks:
-            if task.status in [TaskStatus.COMPLETED, TaskStatus.PASSED]:
-                continue
+        # Wave-based parallel execution
+        max_waves = 10  # Safety limit to prevent infinite loops
+        wave_count = 0
 
-            # Check dependencies
-            if not await self._dependencies_met(task, tasks):
-                task.status = TaskStatus.BLOCKED
-                continue
+        while wave_count < max_waves:
+            wave_count += 1
 
-            # Execute task
-            task.status = TaskStatus.RUNNING
+            # Find tasks ready to execute (deps met, not done/running)
+            ready_tasks = []
+            for task in tasks:
+                if task.status in [TaskStatus.COMPLETED, TaskStatus.PASSED, TaskStatus.RUNNING]:
+                    continue
+                if await self._dependencies_met(task, tasks):
+                    ready_tasks.append(task)
+
+            if not ready_tasks:
+                break  # All tasks completed or blocked
+
+            # Mark tasks as running
+            for task in ready_tasks:
+                task.status = TaskStatus.RUNNING
             await self.db.commit()
 
-            agent_run = await self.executor.execute_task(project, task)
-            self.db.add(agent_run)
-
-            if agent_run.status == AgentStatus.SUCCESS:
-                task.status = TaskStatus.COMPLETED
-            else:
-                task.status = TaskStatus.FAILED
-
-            await self.db.commit()
-            # WebSocket: real-time task status update
-            try:
-                await send_task_update(
-                    str(project.id), str(task.id), task.status.value,
-                    f"Task '{task.title}' {'completed' if task.status == TaskStatus.COMPLETED else 'failed'}"
-                )
-            except Exception:
-                pass
-            await self.notifier.send_task_complete(
-                self._notify_ctx(project, f"任务执行{'完成' if task.status == TaskStatus.COMPLETED else '失败'}"),
-                task_title=task.title,
-                task_status=task.status.value,
-                retry_count=task.retry_count,
+            await self._ws_log(
+                project, "executor",
+                f"Wave {wave_count}: 并行执行 {len(ready_tasks)} 个任务...",
             )
+
+            # Execute ready tasks in parallel
+            async def _execute_one(task: Task) -> None:
+                agent_run = await self.executor.execute_task(project, task)
+                self.db.add(agent_run)
+                if agent_run.status == AgentStatus.SUCCESS:
+                    task.status = TaskStatus.COMPLETED
+                else:
+                    task.status = TaskStatus.FAILED
+                # WebSocket: real-time task status update
+                try:
+                    await send_task_update(
+                        str(project.id), str(task.id), task.status.value,
+                        f"Task '{task.title}' {'completed' if task.status == TaskStatus.COMPLETED else 'failed'}"
+                    )
+                except Exception:
+                    pass
+
+            await asyncio.gather(*[_execute_one(t) for t in ready_tasks])
+            await self.db.commit()
+
+            # Notify for all tasks in this wave
+            for task in ready_tasks:
+                await self.notifier.send_task_complete(
+                    self._notify_ctx(project, f"任务执行{'完成' if task.status == TaskStatus.COMPLETED else '失败'}"),
+                    task_title=task.title,
+                    task_status=task.status.value,
+                    retry_count=task.retry_count,
+                )
 
     async def _stage_testing(self, project: Project) -> None:
         """Testing stage: run all tests."""
