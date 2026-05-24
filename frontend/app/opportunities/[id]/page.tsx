@@ -405,6 +405,24 @@ export default function OpportunityDetailPage() {
             </div>
           )}
         </div>
+
+        {/* Phase 5-C: Optimization & Analytics */}
+        <div className="border-t border-white/10 pt-6 mt-8">
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href={`/opportunities/${opportunity.id}/optimize`}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-sm font-semibold transition-all shadow-lg"
+            >
+              📈 优化看板
+            </Link>
+            <Link
+              href={`/analytics?opportunity_id=${opportunity.id}`}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-sm font-semibold transition-all shadow-lg"
+            >
+              📊 效果分析
+            </Link>
+          </div>
+        </div>
       </div>
     </div>
   );

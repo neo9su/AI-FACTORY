@@ -59,6 +59,9 @@ coverage.xml
 logs/
 *.log
 
+# Generated project workspaces
+workspace/
+
 # Docker volumes
 postgres-data/
 redis-data/

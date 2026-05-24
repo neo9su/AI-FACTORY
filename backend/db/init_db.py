@@ -24,7 +24,8 @@ from backend.models.engagement import (  # noqa: F401 — registers tables with 
     ProductEngagement,
     OpportunityScore,
 )
-from backend.models.publish import PublishTask  # noqa: F401
+from backend.models.publish import PublishTask
+from backend.models.optimization import ContentPerformance, ContentPattern, ABTest  # Phase 5-C  # noqa: F401
 from backend.models.platform_session import PlatformSession  # noqa: F401
 
 

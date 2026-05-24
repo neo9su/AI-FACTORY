@@ -201,3 +201,57 @@ export interface ProductStatsResponse {
   breakdown: Record<string, number>
 }
 
+// ─── Phase 5-B: Publish Types ─────────────────────────────────────────────────
+
+export interface PublishJob {
+  publish_job_id: string
+  product_id: string
+  platform: string
+  status: PublishStatus
+  bundle_path: string | null
+  bundle_data: Record<string, unknown> | null
+  upload_result: Record<string, unknown> | null
+  post_id: string | null
+  post_url: string | null
+  error_msg: string | null
+  created_at: string
+}
+
+export type PublishStatus =
+  | 'pending'
+  | 'packaging'
+  | 'ready'
+  | 'uploading'
+  | 'uploaded'
+  | 'upload_failed'
+  | 'published'
+  | 'failed'
+
+export interface PublishRequest {
+  product_id: string
+  platforms: string[]
+}
+
+export interface PublishTriggerResponse {
+  product_id: string
+  jobs_created: number
+  jobs: Array<{ publish_job_id: string; platform: string }>
+}
+
+export const PLATFORM_LABELS: Record<string, string> = {
+  douyin: '🎵 抖音',
+  xiaohongshu: '📕 小红书',
+  tiktok: '🌐 TikTok',
+}
+
+export const PUBLISH_STATUS_LABELS: Record<PublishStatus, string> = {
+  pending: '等待中',
+  packaging: '打包中...',
+  ready: '✅ 已就绪',
+  uploading: '上传中...',
+  uploaded: '🚀 已上传',
+  upload_failed: '⚠️ 上传失败',
+  published: '🎉 已发布',
+  failed: '❌ 失败',
+}
+

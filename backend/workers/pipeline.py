@@ -20,6 +20,7 @@ from backend.workers.score_worker import recalculate_scores
 from backend.workers.trend_worker import analyze_single_trend, run_trend_scan
 from backend.workers.tts_worker import generate_tts_audio
 from backend.workers.publish_worker import process_publish_job
+from backend.workers.optimizer_worker import run_optimization_pipeline  # Phase 5-C
 
 load_dotenv()
 
@@ -142,10 +143,12 @@ class WorkerSettings:
         generate_tts_audio,
         recalculate_scores,
         process_publish_job,  # Phase 5-B
+        run_optimization_pipeline,  # Phase 5-C
     ]
 
     cron_jobs = [
         arq.cron(recalculate_scores, hour=None, minute=0),  # every hour at :00
+        arq.cron(run_optimization_pipeline, hour=None, minute=15),  # every hour at :15
     ]
 
     max_jobs = 10
