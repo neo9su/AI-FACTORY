@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import api from '@/lib/api';
 import { OpportunityCard } from '@/components/opportunity-card';
+import OnboardingGuide from '@/components/onboarding-guide';
 import {
   type OpportunityReport,
   type TrendScanResponse,
@@ -456,6 +457,8 @@ export default function OpportunitiesPage() {
           </>
         )}
       </div>
+
+      <OnboardingGuide />
     </div>
   );
 }

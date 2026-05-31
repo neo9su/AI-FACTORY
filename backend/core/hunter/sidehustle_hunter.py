@@ -6,7 +6,7 @@ from typing import Optional
 
 import httpx
 
-from backend.core.hunter.base import BaseHunter, RawSignal
+from backend.core.hunter.base import BaseHunter, RawSignal, get_proxy
 
 SIDEHUSTLE_SUBREDDITS = [
     "sidehustle", "passive_income", "financialindependence",
@@ -35,7 +35,7 @@ class SideHustleHunter(BaseHunter):
         """爬取副业/被动收入/赚钱焦虑类热门内容"""
         signals: list[RawSignal] = []
 
-        async with httpx.AsyncClient(headers=self.HEADERS, timeout=30.0) as client:
+        async with httpx.AsyncClient(headers=self.HEADERS, timeout=30.0, proxy=get_proxy()) as client:
             # 1. 爬取热门 subreddits
             for sub in SIDEHUSTLE_SUBREDDITS[:6]:
                 try:

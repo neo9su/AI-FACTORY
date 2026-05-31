@@ -1,312 +1,164 @@
-# Autonomous AI Software Factory
+# NeuroTrend AI Factory
 
-An AI-powered software factory platform that autonomously generates PRD, architecture, code, tests, and deployments from user requirements.
+> **AI 驱动的商机发现 → 情绪分析 → 产品生成 → 自动发布 → 数据优化闭环系统**
 
-## Features
+## 项目定位
 
-- **Requirements Analysis**: AI analyzes requirements and generates detailed PRD with architecture
-- **Autonomous Development**: Claude Code autonomously writes production-ready code
-- **Automated Testing**: Comprehensive test suites generated and executed with intelligent retries
-- **Auto Deployment**: Projects deployed to preview environments with one-click production release
-- **Real-time Monitoring**: WebSocket-based live updates for project progress
-- **Permission Gatekeeper**: Safety controls for dangerous operations
+NeuroTrend 是一个从互联网热点中自动发现商业机会的 AI 系统。它不只分析"什么火"，而是分析**人为什么会对热点上瘾**——提取用户情绪、欲望、痛点，并自动生成可商业化的 AI 产品建议。
 
-## Tech Stack
+## 当前开发阶段
 
-### Frontend
-- Next.js 14 with App Router
-- TypeScript (strict mode)
-- Tailwind CSS 4
-- React Query for state management
-- Socket.IO for real-time updates
+| 阶段 | 完成度 | 功能 |
+|------|--------|------|
+| **Phase 0** 基础架构 | 100% | Next.js 14 + FastAPI + PostgreSQL + Redis |
+| **Phase 1** 数据采集 (Hunter) | 100% | Reddit / 小红书 / 抖音 / X 热点抓取 |
+| **Phase 2** 情绪分析 (Brain) | 100% | 情绪分类、痛点提取、爆点因子分析 |
+| **Phase 3** 商机生成 (Strategist) | 100% | AI 商业机会报告、产品建议、行动计划 |
+| **Phase 4** 产品生成 (Factory) | 100% | AI 产品描述、TTS 语音、SD 图片生成 |
+| **Phase 5-A** 发布 (Publisher) | 100% | 发布面板、多平台推送、QR 登录 |
+| **Phase 5-B** 数据回流 (Analytics) | 100% | 事件追踪、评分系统、排行榜 |
+| **Phase 5-C** 优化循环 (Optimizer) | 100% | 性能分析 S/A/B/C/D 评级、A/B 测试、优化建议 |
+| **Phase 6** AI 自动开发 | 待开始 | 自动生成 AI 产品代码 |
 
-### Backend
-- FastAPI (Python 3.11)
-- PostgreSQL 16
-- Redis 7
-- SQLAlchemy (async)
-- ARQ task queue for background jobs
+## 快速开始
 
-### Infrastructure
-- Docker Compose for local development
-- Alembic for database migrations
-- Claude Code for autonomous development
+### 前置条件
 
-## Project Structure
+- Python 3.11+
+- Node.js 18+
+- PostgreSQL 15+
+- Redis 7+
+
+### 1. 启动后端
+
+```bash
+cd backend
+
+# 创建虚拟环境
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 初始化数据库
+python -c "from db.init_db import init_db; import asyncio; asyncio.run(init_db())"
+
+# 启动 API
+uvicorn main:app --reload --port 8000
+```
+
+### 2. 启动前端
+
+```bash
+cd frontend
+
+# 安装依赖
+npm install
+
+# 启动开发服务器（确保 PORT 环境变量未设置，或用 -p 指定端口）
+npm run dev
+# 或指定端口：PORT=3000 npx next dev -p 3000
+```
+
+访问 http://localhost:3000
+
+### 3. 启动任务队列（可选，用于定时扫描）
+
+```bash
+cd backend
+source .venv/bin/activate
+python -m workers.pipeline
+```
+
+## 访问指南
+
+| 页面 | 路径 | 说明 |
+|------|------|------|
+| 首页 | `/` | 项目概览 |
+| 商机发现 | `/opportunities` | 热点扫描 + 商机列表 |
+| 商机详情 | `/opportunities/[id]` | 情绪分析、痛点、产品建议 |
+| 优化看板 | `/opportunities/[id]/optimize` | 效果评级、优化建议 |
+| 效果分析 | `/analytics` | 商机排行榜 |
+| 项目列表 | `/projects` | AI 软件工厂项目 |
+
+## 架构概览
+
+```
+数据采集 (Hunter)
+   ↓ 热点数据 + 评论
+情绪分析 (Brain)
+   ↓ 情绪/欲望/痛点
+商机生成 (Strategist)
+   ↓ 商业机会报告
+产品生成 (Factory)
+   ↓ AI 产品
+自动发布 (Publisher)
+   ↓ 多平台分发
+数据回流 (Analytics + Optimizer)
+   ↓ 表现数据
+→ 循环优化
+```
+
+## 技术栈
+
+| 层 | 技术 |
+|----|------|
+| 前端 | Next.js 14, TypeScript, Tailwind CSS, shadcn/ui |
+| 后端 | FastAPI (Python 3.11) |
+| 数据库 | PostgreSQL + Redis |
+| 任务队列 | ARQ (async job queue) |
+| 爬虫 | Playwright, aiohttp |
+| AI | Claude / DeepSeek / LLM API |
+| 语音 | CosyVoice2 TTS |
+| 图片 | Stable Diffusion (ComfyUI) |
+
+## 部署
+
+### 本地开发
+
+```bash
+# 确保 PostgreSQL 和 Redis 运行中
+# 后端
+cd backend && uvicorn main:app --host 0.0.0.0 --port 8000
+
+# 前端
+cd frontend && PORT=3000 npm run dev
+```
+
+### Docker（开发中）
+
+```bash
+docker compose up -d
+```
+
+## 项目结构
 
 ```
 autonomous-ai-factory/
-├── frontend/              # Next.js frontend application
-│   ├── app/               # App router pages
-│   │   ├── page.tsx       # Landing page
-│   │   ├── projects/      # Project pages
-│   │   │   ├── page.tsx   # Project list
-│   │   │   ├── new/       # Create project form
-│   │   │   └── [id]/      # Project detail pages
-│   ├── components/        # Reusable React components
-│   ├── lib/               # Utilities (API client, WebSocket)
-│   └── Dockerfile
-├── backend/               # FastAPI backend application
-│   ├── api/               # API route handlers
-│   ├── core/              # Orchestrator, planner, executor, tester, gatekeeper
-│   ├── models/            # SQLAlchemy ORM models
-│   ├── workers/           # ARQ async workers
-│   ├── db/                # Database migrations (Alembic)
-│   ├── tests/             # Pytest test suite
-│   └── Dockerfile
-├── workspace/             # Generated project workspaces
-├── docker-compose.yml     # Docker Compose configuration
-└── .env.example           # Environment variables template
+├── frontend/                # Next.js 前端
+│   ├── app/                 # 页面路由
+│   │   ├── opportunities/   # 商机发现页面
+│   │   ├── analytics/       # 数据分析页面
+│   │   ├── projects/        # AI 项目页面
+│   │   └── ...
+│   ├── components/          # UI 组件
+│   └── lib/                 # API 客户端
+├── backend/                 # FastAPI 后端
+│   ├── api/                 # REST API 路由
+│   │   ├── trends.py        # 趋势扫描 API
+│   │   ├── brain.py         # 情绪分析 API
+│   │   ├── optimizer.py     # 优化分析 API
+│   │   └── ...
+│   ├── core/                # 业务逻辑
+│   │   ├── hunter/          # 数据采集器
+│   │   ├── brain/           # 情绪分析引擎
+│   │   ├── strategist/      # 商机生成器
+│   │   └── optimizer/       # 性能优化器
+│   ├── models/              # 数据库模型
+│   ├── workers/             # 后台任务
+│   └── main.py              # 入口
+├── docs/                    # 文档
+│   └── plans/               # 设计文档
+└── docker-compose.yml
 ```
-
-## Getting Started
-
-### Prerequisites
-
-- Docker and Docker Compose
-- Python 3.11+ (for local backend development)
-- Node.js 20+ (for local frontend development)
-- Anthropic API key
-
-### Setup
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd autonomous-ai-factory
-   ```
-
-2. **Configure environment variables**
-   ```bash
-   cp .env.example .env
-   # Edit .env and add your ANTHROPIC_API_KEY
-   ```
-
-3. **Start with Docker Compose**
-   ```bash
-   docker compose up -d
-   ```
-
-   Services will be available at:
-   - Frontend: http://localhost:3000
-   - Backend API: http://localhost:8000
-   - API Docs: http://localhost:8000/docs
-
-### Local Development
-
-#### Backend
-
-```bash
-cd backend
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run database migrations
-alembic upgrade head
-
-# Start development server
-uvicorn main:app --reload
-```
-
-#### Frontend
-
-```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-```
-
-### Running Tests
-
-#### Backend Tests
-
-```bash
-cd backend
-pytest
-```
-
-Test coverage includes:
-- Model creation and relationships
-- API endpoint functionality
-- Gatekeeper permission logic
-
-#### Frontend Tests
-
-```bash
-cd frontend
-npm test
-```
-
-## API Documentation
-
-Once the backend is running, visit:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-
-### Key Endpoints
-
-- `POST /api/v1/projects` - Create a new project
-- `GET /api/v1/projects` - List all projects
-- `GET /api/v1/projects/{id}` - Get project details
-- `POST /api/v1/projects/{id}/start` - Start project pipeline
-- `GET /api/v1/projects/{id}/agent-runs` - Get agent execution logs
-- `GET /api/v1/projects/{id}/test-runs` - Get test results
-- `GET /api/v1/projects/{id}/delivery-report` - Get delivery report
-- `WS /ws/{project_id}` - WebSocket for real-time updates
-
-## Usage
-
-1. **Create a Project**
-   - Navigate to http://localhost:3000
-   - Click "Create Project"
-   - Fill in requirements, goals, and preferences
-   - Submit to start autonomous development
-
-2. **Monitor Progress**
-   - View real-time pipeline progress
-   - Check task status and agent logs
-   - Review test results as they complete
-
-3. **Deploy**
-   - Once delivered, view the delivery report
-   - Access preview deployment
-   - Review code in generated repository
-
-## Configuration
-
-### Feishu (飞书) Notification Integration
-
-Get real-time project updates in your Feishu/Lark group:
-
-**Quick Setup (Custom Bot Webhook):**
-
-1. In a Feishu group, go to **Settings → Bots → Add Bot → Custom Bot**
-2. Copy the Webhook URL
-3. Add to your `.env` file:
-   ```env
-   FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/your-token
-   # Optional: signature verification
-   # FEISHU_SIGN_SECRET=your-sign-secret
-   ```
-4. Restart the backend and visit `http://localhost:3000/settings` to send a test message
-
-**CLI Verification (no server needed):**
-```bash
-cd ~/autonomous-ai-factory
-python3 scripts/notify_test.py --webhook https://open.feishu.cn/...
-python3 scripts/notify_test.py --all   # Test all notification types
-```
-
-**Notification Events:**
-- 📋 Project created / stage changes
-- ✅/❌ Individual task completions
-- 🧪 Test suite results (pass/fail counts)
-- 🎉 Final delivery report with links
-- 🚧 Gatekeeper permission blocks
-
-**API Endpoints:**
-- `POST /api/v1/notify/test` — Send a test notification
-- `GET /api/v1/notify/config` — Check current configuration status
-
-### Permission Policies
-
-Control what the AI can do through permission policies:
-
-- `allow_auto_deploy`: Allow automatic deployment to preview environments
-- `allow_production_release`: Allow production releases (requires manual approval)
-- `allow_delete_operation`: Allow destructive delete operations
-- `max_cost`: Maximum budget for API costs (USD)
-- `max_retry_count`: Maximum retries for failed tasks
-
-### Gatekeeper
-
-The gatekeeper enforces safety policies:
-
-- Always blocks dangerous operations (e.g., `delete_production_data`)
-- Always allows safe operations (e.g., `create_branch`, `run_tests`)
-- Enforces cost limits and retry limits
-- Requires explicit permission for deployments and external API calls
-
-## Architecture
-
-### Pipeline Stages
-
-1. **Created** - Project initialized
-2. **Requirement Analyzing** - AI analyzes and structures requirements
-3. **Planning** - Generate task breakdown and architecture
-4. **Developing** - Autonomous code generation
-5. **Testing** - Automated test execution
-6. **Reviewing** - Code quality review
-7. **Deploying** - Deployment to preview environment
-8. **Delivered** - Project complete with delivery report
-
-### Components
-
-- **Orchestrator**: Coordinates the entire pipeline
-- **Planner**: Breaks down requirements into tasks
-- **Executor**: Executes development tasks via Claude Code
-- **Tester**: Runs automated tests
-- **Gatekeeper**: Enforces permission policies
-- **WebSocket Manager**: Real-time progress updates
-
-## Troubleshooting
-
-### Database connection issues
-
-```bash
-# Check if PostgreSQL is running
-docker compose ps postgres
-
-# View logs
-docker compose logs postgres
-```
-
-### Backend not starting
-
-```bash
-# Check backend logs
-docker compose logs backend
-
-# Ensure database is ready
-docker compose up postgres -d
-```
-
-### Frontend build errors
-
-```bash
-# Clear Next.js cache
-cd frontend
-rm -rf .next
-
-# Reinstall dependencies
-rm -rf node_modules package-lock.json
-npm install
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Ensure all tests pass: `pytest` and `npm test`
-6. Submit a pull request
-
-## License
-
-MIT License - see LICENSE file for details
-
-## Support
-
-For issues and questions:
-- GitHub Issues: [repository-url]/issues
-- Documentation: See inline code documentation and API docs

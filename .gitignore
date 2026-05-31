@@ -65,3 +65,4 @@ workspace/
 # Docker volumes
 postgres-data/
 redis-data/
+static/qr/

@@ -144,6 +144,15 @@ export const projectsApi = {
     return response.data;
   },
 
+  rerun: async (id: string): Promise<{ status: string; project_id: string; job_id: string; message: string }> => {
+    const response = await api.post(`/projects/${id}/rerun`);
+    return response.data;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/projects/${id}`);
+  },
+
   getAgentRuns: async (id: string): Promise<AgentRun[]> => {
     const response = await api.get<AgentRun[]>(`/projects/${id}/agent-runs`);
     return response.data;

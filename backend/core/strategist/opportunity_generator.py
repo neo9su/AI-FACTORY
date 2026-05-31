@@ -4,20 +4,17 @@ from __future__ import annotations
 import json
 import logging
 
-from anthropic import Anthropic
-
 from backend.core.brain.prompts import OPPORTUNITY_GENERATION_PROMPT
+from backend.core.llm import llm_chat
 
 logger = logging.getLogger(__name__)
 
 
 class OpportunityGenerator:
-    """商机生成器，调用 Claude 将情绪分析转化为结构化商业报告"""
-
-    MODEL = "claude-sonnet-4-5"
+    """商机生成器，调用 LLM 将情绪分析转化为结构化商业报告"""
 
     def __init__(self) -> None:
-        self.client = Anthropic()
+        pass
 
     async def generate(self, topic: str, emotion_analysis: dict) -> dict:
         """生成完整商业机会报告"""
@@ -27,12 +24,7 @@ class OpportunityGenerator:
         )
 
         try:
-            message = self.client.messages.create(
-                model=self.MODEL,
-                max_tokens=4096,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            response_text = message.content[0].text.strip()
+            response_text = llm_chat(prompt, max_tokens=4096)
 
             start = response_text.find("{")
             end = response_text.rfind("}") + 1

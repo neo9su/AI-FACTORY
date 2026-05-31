@@ -3,10 +3,9 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import Any
 
-import anthropic
+from backend.core.llm import llm_chat_json_async
 
 logger = logging.getLogger(__name__)
 
@@ -166,10 +165,10 @@ loadQuestion();
 class PersonalityTestFactory:
     """AI 人格测试 H5 生成工厂"""
 
-    MODEL = "claude-sonnet-4-5"
+    # MODEL — uses llm_chat_json_async which reads model from env/config
 
     def __init__(self) -> None:
-        self._client = anthropic.AsyncAnthropic()
+        pass
 
     async def generate_test_data(self, opportunity: dict[str, Any]) -> dict[str, Any]:
         """生成测试题目数据（JSON 结构）"""
@@ -188,16 +187,8 @@ class PersonalityTestFactory:
         )
 
         logger.info(f"[PersonalityTestFactory] Generating test for: {topic[:40]}")
-        message = await self._client.messages.create(
-            model=self.MODEL,
-            max_tokens=6000,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = message.content[0].text.strip()
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        if match:
-            return json.loads(match.group())
-        return json.loads(raw)
+        data = await llm_chat_json_async(prompt, max_tokens=6000)
+        return data
 
     async def generate_h5(
         self, opportunity: dict[str, Any]

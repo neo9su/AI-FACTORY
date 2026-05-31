@@ -6,7 +6,7 @@ from typing import Optional
 
 import httpx
 
-from backend.core.hunter.base import BaseHunter, RawSignal
+from backend.core.hunter.base import BaseHunter, RawSignal, get_proxy
 
 HIGH_EMOTION_SUBREDDITS: dict[str, list[str]] = {
     "loneliness": ["lonely", "depression", "socialskills", "introvert"],
@@ -21,6 +21,7 @@ HIGH_EMOTION_SUBREDDITS: dict[str, list[str]] = {
 class RedditHunter(BaseHunter):
     BASE_URL = "https://www.reddit.com"
     HEADERS = {"User-Agent": "NeuroTrendBot/1.0"}
+    PROXY = get_proxy()
 
     async def hunt(
         self,
@@ -37,7 +38,9 @@ class RedditHunter(BaseHunter):
             targets = [s for group in HIGH_EMOTION_SUBREDDITS.values() for s in group]
 
         signals: list[RawSignal] = []
-        async with httpx.AsyncClient(headers=self.HEADERS, timeout=30.0) as client:
+        async with httpx.AsyncClient(
+            headers=self.HEADERS, timeout=30.0, proxy=self.PROXY
+        ) as client:
             for sub in targets[:5]:
                 try:
                     resp = await client.get(

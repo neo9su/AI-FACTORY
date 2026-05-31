@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -11,6 +11,9 @@ import {
   type ActionPlan,
   EMOTION_COLORS,
 } from '@/types/neurotrend';
+import OnboardingGuide from '@/components/onboarding-guide';
+import GeneratedProductCard from '@/components/generated-product-card';
+import type { ContentProduct } from '@/types/neurotrend';
 
 // ---------- helpers ----------
 
@@ -30,19 +33,19 @@ function EmotionTag({ emotion }: { emotion: string }) {
 
 function MiniScoreBar({
   label,
-  value,
+  value = 0,
   color = 'bg-indigo-500',
 }: {
   label: string;
-  value: number;
+  value?: number;
   color?: string;
 }) {
-  const pct = Math.min(100, Math.max(0, Math.round(value * 10)));
+  const pct = Math.min(100, Math.max(0, Math.round((value ?? 0) * 10)));
   return (
     <div className="space-y-0.5">
       <div className="flex justify-between text-xs text-gray-500">
         <span>{label}</span>
-        <span className="font-bold text-gray-700">{value.toFixed(1)}</span>
+        <span className="font-bold text-gray-700">{(value ?? 0).toFixed(1)}</span>
       </div>
       <div className="h-1.5 w-full rounded-full bg-gray-100">
         <div
@@ -202,11 +205,42 @@ function ActionPlanCard({ plan }: { plan: ActionPlan }) {
 
 export default function OpportunityDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const opportunityId = params.id as string;
 
   const [opportunity, setOpportunity] = useState<OpportunityReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showTypeSelector, setShowTypeSelector] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [genResult, setGenResult] = useState<string | null>(null);
+  const [generatedProducts, setGeneratedProducts] = useState<ContentProduct[]>([]);
+
+  const PRODUCT_TYPES = [
+    { type: 'personality_test', label: '🧪 人格测试' },
+    { type: 'ebook', label: '📖 电子书' },
+    { type: 'short_video_scripts', label: '🎬 短视频脚本' },
+  ];
+
+  const handleGenerateProduct = async (productType: string) => {
+    setGenerating(true);
+    setShowTypeSelector(false);
+    try {
+      const response = await api.post(`/opportunities/${opportunityId}/generate-product`, {
+        product_type: productType,
+      });
+      const data = response.data;
+      if (data.status === 'queued') {
+        setGenResult(`${productType === 'personality_test' ? '🧪人格测试' : productType === 'ebook' ? '📖电子书' : '🎬短视频脚本'} 已加入生产队列`);
+      } else {
+        setGenResult(`⚠️ ${data.message || '未知响应'}`);
+      }
+    } catch (err) {
+      setGenResult(`❌ 生成失败: ${err instanceof Error ? err.message : '请求错误'}`);
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   useEffect(() => {
     const fetchOpportunity = async (): Promise<void> => {
@@ -223,6 +257,22 @@ export default function OpportunityDetailPage() {
     };
     fetchOpportunity();
   }, [opportunityId]);
+
+  // Fetch generated products
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const res = await api.get<ContentProduct[]>(`/opportunities/${opportunityId}/products`);
+        setGeneratedProducts(res.data);
+      } catch {
+        // non-critical
+      }
+    };
+    fetchProducts();
+    // Auto-refresh every 5s while generating
+    const interval = setInterval(fetchProducts, 5000);
+    return () => clearInterval(interval);
+  }, [opportunityId, genResult]);
 
   if (loading) {
     return (
@@ -385,12 +435,47 @@ export default function OpportunityDetailPage() {
               </span>
             </h2>
 
-            <button
-              onClick={() => alert('Phase 3 即将接入：AI 自动生成产品！')}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-sm font-semibold transition-colors shadow-lg"
-            >
-              🚀 生成产品
-            </button>
+            {generating ? (
+              <div className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600/50 to-purple-600/50 text-sm font-semibold text-white/70">
+                <div className="animate-spin h-4 w-4 border-2 border-white/30 border-t-white rounded-full" />
+                正在生成...
+              </div>
+            ) : genResult ? (
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-emerald-400">✅ {genResult}</span>
+                <button
+                  onClick={() => setGenResult(null)}
+                  className="text-xs text-indigo-400 hover:text-white underline"
+                >
+                  继续生成
+                </button>
+              </div>
+            ) : showTypeSelector ? (
+              <div className="flex items-center gap-2">
+                {PRODUCT_TYPES.map((pt) => (
+                  <button
+                    key={pt.type}
+                    onClick={() => handleGenerateProduct(pt.type)}
+                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-medium transition-colors"
+                  >
+                    {pt.label}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setShowTypeSelector(false)}
+                  className="text-xs text-white/40 hover:text-white/70 ml-1"
+                >
+                  取消
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowTypeSelector(true)}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-sm font-semibold transition-colors shadow-lg"
+              >
+                🚀 生成产品
+              </button>
+            )}
           </div>
 
           {sortedProducts.length === 0 ? (
@@ -408,6 +493,27 @@ export default function OpportunityDetailPage() {
 
         {/* Phase 5-C: Optimization & Analytics */}
         <div className="border-t border-white/10 pt-6 mt-8">
+
+          {/* ─── 已生成产品 ─── */}
+          {generatedProducts.length > 0 && (
+            <div className="mb-8 space-y-4">
+              <h2 className="text-xl font-bold">
+                📦 已生成产品
+                <span className="ml-2 text-sm font-normal text-indigo-300">
+                  ({generatedProducts.length} 个)
+                </span>
+              </h2>
+              <p className="text-xs text-gray-400">
+                点击「查看内容」展开完整的 AI 生成内容，点击「🚀 发布」可发布到社交媒体或部署到网站
+              </p>
+              <div className="space-y-3">
+                {generatedProducts.map((product) => (
+                  <GeneratedProductCard key={product.id} product={product} />
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-3">
             <Link
               href={`/opportunities/${opportunity.id}/optimize`}
@@ -424,6 +530,8 @@ export default function OpportunityDetailPage() {
           </div>
         </div>
       </div>
+
+      <OnboardingGuide />
     </div>
   );
 }

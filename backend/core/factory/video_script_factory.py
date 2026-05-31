@@ -6,7 +6,7 @@ import logging
 import re
 from typing import Any
 
-import anthropic
+from backend.core.llm import llm_chat_json_async
 
 logger = logging.getLogger(__name__)
 
@@ -73,10 +73,10 @@ VIDEO_SCRIPT_PROMPT = """\
 class VideoScriptFactory:
     """AI 情绪短视频脚本生成工厂"""
 
-    MODEL = "claude-sonnet-4-5"
+    # MODEL is configured inside llm_chat_json_async
 
     def __init__(self) -> None:
-        self._client = anthropic.AsyncAnthropic()
+        pass
 
     async def generate_scripts(
         self, opportunity: dict[str, Any]
@@ -99,12 +99,8 @@ class VideoScriptFactory:
         )
 
         logger.info(f"[VideoScriptFactory] Generating scripts for: {topic[:40]}")
-        message = await self._client.messages.create(
-            model=self.MODEL,
-            max_tokens=8000,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = message.content[0].text.strip()
+        data = await llm_chat_json_async(prompt, max_tokens=8000)
+        raw = json.dumps(data)
         match = re.search(r"\{.*\}", raw, re.DOTALL)
         if match:
             data = json.loads(match.group())

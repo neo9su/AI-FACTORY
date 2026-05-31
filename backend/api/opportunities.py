@@ -1,6 +1,7 @@
 """Opportunities API — 商机报告管理"""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
 import arq
@@ -48,7 +49,7 @@ class ProductResponse(BaseModel):
     tts_audio_urls: Optional[list]
     tts_error: Optional[str]
     cover_image_url: Optional[str]
-    created_at: str
+    created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -112,15 +113,18 @@ async def generate_product(
     await session.commit()
     await session.refresh(product)
 
-    # 将 opportunity 转为 dict
+    # 将 opportunity 转为 dict（安全处理 None 和错误类型）
+    monetization = report.monetization_strategy
+    if not isinstance(monetization, dict):
+        monetization = {}
     opp_data = {
         "topic": report.topic,
         "core_emotions": report.core_emotions,
         "core_pain_points": report.core_pain_points,
         "willingness_to_pay": report.willingness_to_pay,
-        "audience_profile": report.audience_profile,
-        "hook_lines": report.hook_lines,
-        "viral_formula": (report.monetization_strategy or {}).get("viral_formula", ""),
+        "audience_profile": report.audience_profile or "",
+        "hook_lines": report.hook_lines or [],
+        "viral_formula": monetization.get("viral_formula", ""),
         "identity_factor": "",
     }
 

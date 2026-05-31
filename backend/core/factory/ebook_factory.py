@@ -6,7 +6,7 @@ import logging
 import re
 from typing import Any
 
-import anthropic
+from backend.core.llm import llm_chat_async, llm_chat_json_async
 
 logger = logging.getLogger(__name__)
 
@@ -74,11 +74,7 @@ CHAPTER_CONTENT_PROMPT = """\
 class EbookFactory:
     """AI 电子书自动生成工厂"""
 
-    MODEL = "claude-sonnet-4-5"
-    HAIKU = "claude-haiku-20240307"
-
-    def __init__(self) -> None:
-        self._client = anthropic.AsyncAnthropic()
+    # Uses OpenAI-compatible API via backend.core.llm helpers
 
     async def generate_outline(self, opportunity: dict[str, Any]) -> dict[str, Any]:
         """根据商机报告生成电子书大纲"""
@@ -97,17 +93,8 @@ class EbookFactory:
         )
 
         logger.info(f"[EbookFactory] Generating outline for: {topic[:40]}")
-        message = await self._client.messages.create(
-            model=self.MODEL,
-            max_tokens=4096,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = message.content[0].text.strip()
-        # 提取 JSON
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        if match:
-            return json.loads(match.group())
-        return json.loads(raw)
+        data = await llm_chat_json_async(prompt, max_tokens=4096)
+        return data
 
     async def generate_chapter(
         self,
@@ -126,12 +113,8 @@ class EbookFactory:
         )
 
         logger.info(f"[EbookFactory] Writing chapter {chapter.get('number')}: {chapter.get('title', '')[:30]}")
-        message = await self._client.messages.create(
-            model=self.HAIKU,
-            max_tokens=3000,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return message.content[0].text.strip()
+        content = await llm_chat_async(prompt, max_tokens=3000)
+        return content
 
     async def generate_full_ebook(
         self,

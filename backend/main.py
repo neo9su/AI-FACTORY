@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from backend.api import analytics, health as health_api, notify, opportunities, platform_login, projects, publish, settings, stats, tasks, trends, workspace, ws
+from backend.api import analytics, deploy as deploy_api, health as health_api, notify, opportunities, platform_login, projects, publish, settings, stats, tasks, trends, workspace, ws
 from backend.api import optimizer as optimizer_api  # Phase 5-C
 from backend.db.session import engine
 from backend.models.base import Base
@@ -66,6 +66,7 @@ app.include_router(health_api.router, prefix="/api/v1", tags=["health"])
 app.include_router(settings.router, prefix="/api/v1", tags=["settings"])
 app.include_router(platform_login.router, prefix="/api", tags=["platform-login"])
 app.include_router(optimizer_api.router, prefix="/api/v1", tags=["optimizer"])  # Phase 5-C
+app.include_router(deploy_api.router, prefix="/api/v1", tags=["deploy"])
 
 
 @app.get("/health")

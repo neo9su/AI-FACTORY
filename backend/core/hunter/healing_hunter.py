@@ -6,7 +6,7 @@ from typing import Optional
 
 import httpx
 
-from backend.core.hunter.base import BaseHunter, RawSignal
+from backend.core.hunter.base import BaseHunter, RawSignal, get_proxy
 
 HEALING_SUBREDDITS = [
     "lonely", "depression", "anxiety",
@@ -35,7 +35,7 @@ class HealingHunter(BaseHunter):
         """爬取情绪疗愈/焦虑/孤独类热门内容"""
         signals: list[RawSignal] = []
 
-        async with httpx.AsyncClient(headers=self.HEADERS, timeout=30.0) as client:
+        async with httpx.AsyncClient(headers=self.HEADERS, timeout=30.0, proxy=get_proxy()) as client:
             # 1. 爬取热门 subreddits
             for sub in HEALING_SUBREDDITS[:6]:
                 try:

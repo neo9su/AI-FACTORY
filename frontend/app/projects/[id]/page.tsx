@@ -28,8 +28,23 @@ export default function ProjectDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'activity' | 'code' | 'tests' | 'review' | 'agents'>('activity');
+  const [rerunning, setRerunning] = useState(false);
 
   const { messages, lastEvent, isConnected } = useWebSocket(projectId);
+
+  const handleRerun = async () => {
+    if (!project) return;
+    if (!confirm(`Restart pipeline for "${project.name}"? This will reset the project to "created" status and start a new run.`)) return;
+    setRerunning(true);
+    try {
+      await projectsApi.rerun(projectId);
+      // Reload page to reflect new status
+      window.location.reload();
+    } catch (err) {
+      alert('Failed to restart: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      setRerunning(false);
+    }
+  };
 
   useEffect(() => {
     const fetchProject = async (): Promise<void> => {
@@ -141,6 +156,22 @@ export default function ProjectDetailPage() {
             </div>
             <div className="flex flex-col items-end space-y-2">
               <StatusBadge status={project.status} className="text-lg px-4 py-2" />
+              {/* Rerun button for terminal-state projects */}
+              {(project.status === 'failed' || project.status === 'delivered') && (
+                <button
+                  onClick={handleRerun}
+                  disabled={rerunning}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-all ${
+                    rerunning
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : project.status === 'failed'
+                        ? 'bg-red-100 text-red-700 hover:bg-red-200 hover:text-red-800'
+                        : 'bg-green-100 text-green-700 hover:bg-green-200 hover:text-green-800'
+                  }`}
+                >
+                  {rerunning ? '⟳ Restarting...' : '🔄 Rerun Pipeline'}
+                </button>
+              )}
               <div className="flex items-center space-x-2 text-sm">
                 <span
                   className={`w-2 h-2 rounded-full ${
