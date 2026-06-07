@@ -18,7 +18,7 @@ from backend.models.trend import ContentProduct
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-SUPPORTED_PLATFORMS = ["douyin", "xiaohongshu", "tiktok"]
+SUPPORTED_PLATFORMS = ["douyin", "xiaohongshu", "tiktok", "youtube", "bilibili", "kuaishou"]
 
 class PublishRequest(BaseModel):
     product_id: str

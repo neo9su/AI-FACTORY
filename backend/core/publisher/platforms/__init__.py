@@ -2,11 +2,17 @@ from backend.core.publisher.platforms.base import PlatformClient, PlatformUpload
 from backend.core.publisher.platforms.douyin import DouyinClient
 from backend.core.publisher.platforms.xiaohongshu import XiaohongshuClient
 from backend.core.publisher.platforms.tiktok import TikTokClient
+from backend.core.publisher.platforms.youtube import YouTubeClient
+from backend.core.publisher.platforms.bilibili import BilibiliClient
+from backend.core.publisher.platforms.kuaishou import KuaishouClient
 
 PLATFORM_REGISTRY: dict[str, type[PlatformClient]] = {
     "douyin": DouyinClient,
     "xiaohongshu": XiaohongshuClient,
     "tiktok": TikTokClient,
+    "youtube": YouTubeClient,
+    "bilibili": BilibiliClient,
+    "kuaishou": KuaishouClient,
 }
 
 

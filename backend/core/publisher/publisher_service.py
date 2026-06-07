@@ -19,15 +19,21 @@ if TYPE_CHECKING:
     from backend.core.publisher.platforms.base import PlatformUploadResult
 
 PLATFORM_HASHTAG_LIMITS = {
-    "douyin": 5,        # 抖音 recommend 3-5 tags
-    "xiaohongshu": 10,  # 小红书 supports many tags
-    "tiktok": 8,        # TikTok 5-8 tags
+    "douyin": 5,
+    "xiaohongshu": 10,
+    "tiktok": 8,
+    "youtube": 15,
+    "bilibili": 6,
+    "kuaishou": 5,
 }
 
 PLATFORM_CAPTION_LIMITS = {
     "douyin": 500,
     "xiaohongshu": 1000,
     "tiktok": 300,
+    "youtube": 5000,
+    "bilibili": 2000,
+    "kuaishou": 1000,
 }
 
 
