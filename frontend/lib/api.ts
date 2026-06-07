@@ -300,3 +300,106 @@ export interface TimelineEntry {
 }
 
 export default api;
+
+// ─── Video Pipeline Types ────────────────────────────────────────────────────
+
+export interface VideoProjectCreate {
+  title: string;
+  description?: string;
+  source_filepath?: string;
+}
+
+export interface VideoProject {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  source_filename: string | null;
+  source_filepath: string | null;
+  source_duration: number | null;
+  source_resolution: string | null;
+  current_stage: number | null;
+  total_stages: number;
+  error_log: string | null;
+  publish_platform: string | null;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VideoPipelineStage {
+  id: string;
+  stage_name: string;
+  stage_order: number;
+  status: string;
+  display_name: string;
+  params: Record<string, unknown> | null;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_seconds: number | null;
+  error_log: string | null;
+  output_asset: VideoAsset | null;
+}
+
+export interface VideoAsset {
+  id: string;
+  filename: string;
+  filepath: string;
+  file_size_bytes: number | null;
+  duration_seconds: number | null;
+  resolution: string | null;
+  md5_hash: string | null;
+  asset_type: string;
+  source_stage: string | null;
+  created_at: string;
+}
+
+export interface VideoProjectDetail extends VideoProject {
+  stages: VideoPipelineStage[];
+  assets: VideoAsset[];
+}
+
+export const videoProjectsApi = {
+  create: async (data: FormData): Promise<VideoProject> => {
+    const response = await api.post<VideoProject>('/video-projects', data, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  list: async (params?: { status?: string }): Promise<VideoProject[]> => {
+    const queryParams = new URLSearchParams();
+    if (params?.status) queryParams.set('status', params.status);
+    const qs = queryParams.toString();
+    const response = await api.get<VideoProject[]>(`/video-projects${qs ? `?${qs}` : ''}`);
+    return response.data;
+  },
+
+  get: async (id: string): Promise<VideoProjectDetail> => {
+    const response = await api.get<VideoProjectDetail>(`/video-projects/${id}`);
+    return response.data;
+  },
+
+  startPipeline: async (id: string): Promise<{ message: string; project_id: string; status: string }> => {
+    const response = await api.post(`/video-projects/${id}/start-pipeline`);
+    return response.data;
+  },
+
+  runStage: async (id: string, stageName: string): Promise<{ message: string; stage: string; status: string }> => {
+    const response = await api.post(`/video-projects/${id}/run-stage/${stageName}`);
+    return response.data;
+  },
+
+  delete: async (id: string): Promise<{ message: string; status: string }> => {
+    const response = await api.delete(`/video-projects/${id}`);
+    return response.data;
+  },
+
+  getAssets: async (id: string, assetType?: string): Promise<VideoAsset[]> => {
+    const queryParams = new URLSearchParams();
+    if (assetType) queryParams.set('asset_type', assetType);
+    const qs = queryParams.toString();
+    const response = await api.get<VideoAsset[]>(`/video-projects/${id}/assets${qs ? `?${qs}` : ''}`);
+    return response.data;
+  },
+};
