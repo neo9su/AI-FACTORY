@@ -147,3 +147,135 @@ async def get_timeline_stats(
     ]
 
     return timeline
+
+
+@router.get("/stats/stages")
+async def get_stage_stats(
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Get per-stage pipeline statistics.
+
+    Returns:
+        dict: Stage-by-stage execution stats including counts,
+              average durations, and failure rates.
+    """
+    # Get all AgentRuns grouped by agent_name (= stage)
+    from sqlalchemy import case
+
+    result = await db.execute(
+        select(
+            AgentRun.agent_name,
+            func.count(AgentRun.id),
+            func.sum(
+                func.extract("epoch", AgentRun.finished_at) -
+                func.extract("epoch", AgentRun.started_at)
+            ),
+            func.sum(case((AgentRun.status == AgentStatus.SUCCESS, 1), else_=0)),
+            func.sum(case((AgentRun.status == AgentStatus.FAILED, 1), else_=0)),
+        ).group_by(AgentRun.agent_name)
+    )
+
+    stages = []
+    for row in result.all():
+        name, count, total_duration, success_count, fail_count = row
+        stages.append({
+            "name": name,
+            "executions": count,
+            "avg_duration_seconds": round(total_duration / count, 1) if total_duration and count else 0,
+            "success_count": success_count or 0,
+            "fail_count": fail_count or 0,
+            "failure_rate": round((fail_count or 0) / count * 100, 1) if count > 0 else 0,
+        })
+
+    return {"stages": stages}
+
+
+@router.get("/stats/errors")
+async def get_error_stats(
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Get error distribution across pipeline stages.
+
+    Returns:
+        dict: Error counts grouped by stage.
+    """
+    result = await db.execute(
+        select(AgentRun.logs).where(
+            AgentRun.status == AgentStatus.FAILED,
+            AgentRun.logs.isnot(None),
+        )
+    )
+
+    error_by_stage: dict[str, int] = {}
+    for row in result.all():
+        log = row[0] or ""
+        if "Error:" in log:
+            stage = "unknown"
+            error_by_stage[stage] = error_by_stage.get(stage, 0) + 1
+
+    failed_projects = await db.execute(
+        select(func.count(Project.id))
+        .where(Project.status == ProjectStatus.FAILED)
+    )
+    total_failures = failed_projects.scalar() or 0
+
+    return {
+        "total_failed_projects": total_failures,
+        "errors_by_stage": error_by_stage,
+    }
+
+
+@router.get("/stats/history")
+async def get_pipeline_history(
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+) -> list[dict[str, Any]]:
+    """Get recent pipeline run history.
+
+    Args:
+        limit: Number of recent projects to return (default: 20)
+
+    Returns:
+        list: Recent pipeline runs with metadata.
+    """
+    agent_count_subq = (
+        select(func.count(AgentRun.id))
+        .where(AgentRun.project_id == Project.id)
+        .scalar_subquery()
+    )
+    task_count_subq = (
+        select(func.count(Task.id))
+        .where(Task.project_id == Project.id)
+        .scalar_subquery()
+    )
+
+    result = await db.execute(
+        select(
+            Project.id,
+            Project.name,
+            Project.status,
+            Project.created_at,
+            Project.updated_at,
+            func.extract("epoch", Project.updated_at) -
+            func.extract("epoch", Project.created_at),
+            agent_count_subq,
+            task_count_subq,
+        )
+        .order_by(Project.created_at.desc())
+        .limit(limit)
+    )
+
+    history = []
+    for row in result.all():
+        project_id, name, status, created_at, updated_at, duration, agent_runs, tasks = row
+        history.append({
+            "id": project_id,
+            "name": name,
+            "status": status.value if hasattr(status, "value") else str(status),
+            "created_at": created_at.isoformat() if created_at else "",
+            "duration_seconds": round(duration, 1) if duration else 0,
+            "agent_runs": agent_runs or 0,
+            "tasks": tasks or 0,
+        })
+
+    return history
