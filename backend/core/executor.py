@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-from openai import AsyncOpenAI
 
 from backend.models.project import AgentRun, AgentStatus, Project, Task
 
@@ -32,12 +31,12 @@ class Executor:
         self.workspace_root = Path(workspace_root)
         self.workspace_root.mkdir(exist_ok=True)
         
-        # Initialize LLM client
-        api_key = os.getenv("LLM_API_KEY") or os.getenv("ANTHROPIC_API_KEY", "")
-        base_url = os.getenv("OPENAI_BASE_URL", "http://10.190.0.214:8080/v1")
-        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-        self.model = os.getenv("LLM_MODEL", "deepseek-chat")
-        self.fallback_model = os.getenv("LLM_FALLBACK_MODEL", "us.anthropic.claude-opus-4-6")
+        # Initialize LLM client — uses provider system from llm.py
+        from backend.core.llm import get_provider
+
+        self._provider = get_provider()
+        self.model = self._provider.default_model
+        self.fallback_model = self._provider.fallback_model if hasattr(self._provider, 'fallback_model') else ""
         
         # Token usage tracking for the last LLM call
         self._last_usage: dict = {}
@@ -261,17 +260,7 @@ Do NOT repeat the same mistakes. Focus on:
         if existing_files:
             file_list = [str(f.relative_to(workspace)) for f in existing_files if f.is_file()]
             if file_list:
-                context = f"\n\nExisting files in workspace:\n" + "\n".join(f"- {f}" for f in file_list[:20])
-
-        messages = [
-            {"role": "system", "content": (
-                "You are a senior full-stack software engineer with 15+ years experience. "
-                "You write production-quality code that is clean, well-tested, and immediately runnable. "
-                "You always output valid JSON exactly matching the requested structure. "
-                "Never wrap output in markdown code blocks. Never add commentary outside the JSON."
-            )},
-            {"role": "user", "content": prompt + context},
-        ]
+                context = f"\\n\\nExisting files in workspace:\\n" + "\n".join(f"- {f}" for f in file_list[:20])
 
         # Reset usage tracking for this call
         self._last_usage = {
@@ -285,34 +274,36 @@ Do NOT repeat the same mistakes. Focus on:
 
         start_time = time.time()
 
+        # Build system prompt
+        system_prompt = (
+            "You are a senior full-stack software engineer with 15+ years experience. "
+            "You write production-quality code that is clean, well-tested, and immediately runnable. "
+            "You always output valid JSON exactly matching the requested structure. "
+            "Never wrap output in markdown code blocks. Never add commentary outside the JSON."
+        )
+
+        full_prompt = prompt + context
+
         try:
-            response = await self.client.chat.completions.create(
+            result = await self._provider.chat(
+                prompt=full_prompt,
+                system_prompt=system_prompt,
                 model=self.model,
-                messages=messages,
                 max_tokens=8192,
                 temperature=0.1,
             )
-            result = response.choices[0].message.content
-            # Track usage
-            if response.usage:
-                self._last_usage["prompt_tokens"] += response.usage.prompt_tokens or 0
-                self._last_usage["completion_tokens"] += response.usage.completion_tokens or 0
-                self._last_usage["total_tokens"] += response.usage.total_tokens or 0
+            self._last_usage["model_used"] = self.model
         except Exception as e:
             # Fallback to backup model
             if self.fallback_model and self.fallback_model != self.model:
                 self._last_usage["model_used"] = self.fallback_model
-                response = await self.client.chat.completions.create(
+                result = await self._provider.chat(
+                    prompt=full_prompt,
+                    system_prompt=system_prompt,
                     model=self.fallback_model,
-                    messages=messages,
                     max_tokens=8192,
                     temperature=0.1,
                 )
-                result = response.choices[0].message.content
-                if response.usage:
-                    self._last_usage["prompt_tokens"] += response.usage.prompt_tokens or 0
-                    self._last_usage["completion_tokens"] += response.usage.completion_tokens or 0
-                    self._last_usage["total_tokens"] += response.usage.total_tokens or 0
             else:
                 raise
 
@@ -320,27 +311,19 @@ Do NOT repeat the same mistakes. Focus on:
         if not self._is_valid_file_json(result):
             self._last_usage["retried"] = True
             # Ask LLM to fix its output
-            fix_messages = messages + [
-                {"role": "assistant", "content": result},
-                {"role": "user", "content": (
-                    "Your response is NOT valid JSON or is missing the 'files' array. "
-                    "Please output ONLY a valid JSON object with this exact structure:\n"
-                    '{"files": [{"path": "...", "content": "..."}], "summary": "..."}\n'
-                    "No markdown, no code blocks, no extra text. Just raw JSON."
-                )},
-            ]
             try:
-                fix_response = await self.client.chat.completions.create(
+                fixed_result = await self._provider.chat(
+                    prompt=(
+                        "Your response is NOT valid JSON or is missing the 'files' array. "
+                        "Please output ONLY a valid JSON object with this exact structure:\n"
+                        '{"files": [{"path": "...", "content": "..."}], "summary": "..."}\n'
+                        "No markdown, no code blocks, no extra text. Just raw JSON."
+                    ),
+                    system_prompt=system_prompt,
                     model=self.model,
-                    messages=fix_messages,
                     max_tokens=8192,
                     temperature=0.0,
                 )
-                fixed_result = fix_response.choices[0].message.content
-                if fix_response.usage:
-                    self._last_usage["prompt_tokens"] += fix_response.usage.prompt_tokens or 0
-                    self._last_usage["completion_tokens"] += fix_response.usage.completion_tokens or 0
-                    self._last_usage["total_tokens"] += fix_response.usage.total_tokens or 0
                 if self._is_valid_file_json(fixed_result):
                     self._last_usage["latency_ms"] = int((time.time() - start_time) * 1000)
                     return fixed_result
