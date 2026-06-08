@@ -5,7 +5,7 @@ import json
 import logging
 
 from backend.core.brain.prompts import OPPORTUNITY_GENERATION_PROMPT
-from backend.core.llm import llm_chat
+from backend.core.llm import llm_chat_async
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ class OpportunityGenerator:
         )
 
         try:
-            response_text = llm_chat(prompt, max_tokens=4096)
+            response_text = llm_chat_async(prompt, max_tokens=4096)
 
             start = response_text.find("{")
             end = response_text.rfind("}") + 1

@@ -1,4 +1,18 @@
 """Database models package."""
+from backend.models.auth import (
+    User,
+    Team,
+    TeamMembership,
+    TeamProject,
+    MembershipStatus,
+    TeamRole,
+    UserRole,
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    get_password_hash,
+    verify_password,
+)
 from backend.models.project import (
     AgentRun,
     CodeReview,
@@ -24,6 +38,18 @@ from backend.models.publish import PublishTask as PublishJob  # noqa: F401
 from backend.models.platform_session import PlatformSession  # noqa: F401
 
 __all__ = [
+    # auth models
+    "User",
+    "Team",
+    "TeamMembership",
+    "TeamProject",
+    "UserRole",
+    "TeamRole",
+    "create_access_token",
+    "create_refresh_token",
+    "decode_token",
+    "get_password_hash",
+    "verify_password",
     # project models
     "Project",
     "Requirements",

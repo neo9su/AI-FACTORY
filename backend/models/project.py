@@ -71,6 +71,9 @@ class Project(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "projects"
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    owner_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     user_requirement: Mapped[str] = mapped_column(Text, nullable=False)
     goal: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     tech_stack: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
@@ -81,6 +84,7 @@ class Project(Base, UUIDMixin, TimestampMixin):
     )
 
     # Relationships
+    owner = relationship("User", foreign_keys=[owner_id], back_populates="projects")
     requirements: Mapped[Optional["Requirements"]] = relationship(
         back_populates="project",
         uselist=False,
@@ -244,9 +248,7 @@ class Deployment(Base, UUIDMixin, TimestampMixin):
 
 class DeliveryReport(Base, UUIDMixin, TimestampMixin):
     """Delivery report model storing final project summary."""
-
     __tablename__ = "delivery_reports"
-
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     passed_tests: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
@@ -257,6 +259,7 @@ class DeliveryReport(Base, UUIDMixin, TimestampMixin):
 
     # Relationships
     project: Mapped["Project"] = relationship(back_populates="delivery_report")
+    team_projects: Mapped[list["TeamProject"]] = relationship(back_populates="project")
 
 
 class PermissionPolicy(Base, UUIDMixin, TimestampMixin):

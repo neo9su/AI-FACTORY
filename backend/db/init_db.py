@@ -12,7 +12,13 @@ from backend.models.project import (  # noqa: F401 — registers tables with Bas
     Project,
     Requirements,
     Task,
+    TeamProject,
     TestRun,
+)
+from backend.models.auth import (  # noqa: F401 — registers tables with Base.metadata
+    User,
+    Team,
+    TeamMembership,
 )
 from backend.models.trend import (  # noqa: F401 — registers tables with Base.metadata
     ContentProduct,
