@@ -373,11 +373,185 @@ async def run_pipeline_stage(
     project.error_log = None
     await db.commit()
 
-    # TODO: Dispatch to actual worker/executor
-    # For now, we mark it as a placeholder execution
-    # The actual ffmpeg/ComfyUI subprocess execution will be added in a future phase
-    stage.status = StageStatus.PENDING  # Reset so UI shows it's queued
-    stage.started_at = None
+    # Execute stage
+    if stage_name == "overlay_stickers":
+        from backend.core.video_effects.overlay import apply_overlay_effects, SubtitleStyle
+        # Get latest video asset from previous stage
+        result = await db.execute(
+            select(VideoAsset)
+            .where(VideoAsset.project_id == project_id)
+            .order_by(VideoAsset.created_at.desc())
+        )
+        last_asset = result.scalars().first()
+        input_video = last_asset.filepath if last_asset else project.source_filepath or ""
+
+        if not input_video or not os.path.exists(input_video):
+            raise HTTPException(400, "No input video available for overlay stage")
+
+        output_video = str(Path(input_video).with_name(
+            Path(input_video).stem + "_with_stickers" + Path(input_video).suffix
+        ))
+
+        style = SubtitleStyle(
+            font="SmileySans-Oblique",
+            font_size=24,
+            font_color="white",
+            font_outline=2,
+            font_outline_color="black",
+            position="top_right",
+            margin_x=40,
+            margin_y=40,
+            highlight_color="yellow",
+            highlight_min_chars=4,
+            use_background=True,
+        )
+
+        res = apply_overlay_effects(
+            input_video=input_video,
+            output_video=output_video,
+            style=style,
+        )
+
+        if res.get("success"):
+            stage.status = StageStatus.COMPLETED
+            stage.output_filepath = output_video
+            stage.output_url = output_video
+            stage.duration_seconds = float(res.get("duration", 0))
+            # Create asset record
+            asset = VideoAsset(
+                project_id=project_id,
+                filename=Path(output_video).name,
+                filepath=output_video,
+                asset_type="output",
+                source_stage="overlay_stickers",
+                duration_seconds=float(res.get("duration", 0)),
+            )
+            db.add(asset)
+            # Update project source to latest output
+            project.source_filepath = output_video
+        else:
+            stage.status = StageStatus.FAILED
+            stage.error_log = res.get("error", "Unknown error")
+
+    elif stage_name == "dedup":
+        from backend.core.video_effects.dedup import apply_dedup_effects, DedupConfig
+        # Get latest video asset from previous stage
+        result = await db.execute(
+            select(VideoAsset)
+            .where(VideoAsset.project_id == project_id)
+            .order_by(VideoAsset.created_at.desc())
+        )
+        last_asset = result.scalars().first()
+        input_video = last_asset.filepath if last_asset else project.source_filepath or ""
+
+        if not input_video or not os.path.exists(input_video):
+            raise HTTPException(400, "No input video available for dedup stage")
+
+        output_video = str(Path(input_video).with_name(
+            Path(input_video).stem + "_dedup" + Path(input_video).suffix
+        ))
+
+        config = DedupConfig(
+            color_temp=0.02,
+            saturation=1.05,
+            brightness=1.01,
+            contrast=1.02,
+            speed_variation=0.02,
+            pixel_shift=1,
+            noise_level=0.001,
+            bgm_replace=False,
+            strip_metadata=True,
+        )
+
+        res = apply_dedup_effects(
+            input_video=input_video,
+            output_video=output_video,
+            config=config,
+        )
+
+        if res.get("success"):
+            stage.status = StageStatus.COMPLETED
+            stage.output_filepath = output_video
+            stage.output_url = output_video
+            stage.duration_seconds = float(res.get("duration", 0))
+            asset = VideoAsset(
+                project_id=project_id,
+                filename=Path(output_video).name,
+                filepath=output_video,
+                asset_type="output",
+                source_stage="dedup",
+                duration_seconds=float(res.get("duration", 0)),
+            )
+            db.add(asset)
+            project.source_filepath = output_video
+        else:
+            stage.status = StageStatus.FAILED
+            stage.error_log = res.get("error", "Unknown error")
+
+    elif stage_name == "dub":
+        # Dub stage: overlay TTS audio onto video
+        from backend.core.tts import TTSService
+        # Get latest video asset
+        result = await db.execute(
+            select(VideoAsset)
+            .where(VideoAsset.project_id == project_id)
+            .order_by(VideoAsset.created_at.desc())
+        )
+        last_asset = result.scalars().first()
+        input_video = last_asset.filepath if last_asset else project.source_filepath or ""
+
+        if not input_video or not os.path.exists(input_video):
+            raise HTTPException(400, "No input video available for dub stage")
+
+        # Generate TTS audio
+        tts_service = TTSService()
+        script = stage.params.get("script", "这是一个AI生成的视频介绍") if stage.params else "这是一个AI生成的视频介绍"
+        audio_path = f"{Path(input_video).stem}_dub.mp3"
+        tts_service.synthesize(text=script, output_path=audio_path)
+
+        # Merge audio onto video
+        output_video = str(Path(input_video).with_name(
+            Path(input_video).stem + "_dub" + Path(input_video).suffix
+        ))
+        cmd = [
+            "ffmpeg", "-y", "-i", input_video, "-i", audio_path,
+            "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
+            "-map", "0:v:0", "-map", "1:a:0",
+            "-shortest", output_video,
+        ]
+        import subprocess
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            stage.status = StageStatus.COMPLETED
+            stage.output_filepath = output_video
+            stage.output_url = output_video
+            asset = VideoAsset(
+                project_id=project_id,
+                filename=Path(output_video).name,
+                filepath=output_video,
+                asset_type="output",
+                source_stage="dub",
+            )
+            db.add(asset)
+            project.source_filepath = output_video
+        else:
+            stage.status = StageStatus.FAILED
+            stage.error_log = result.stderr[:500]
+
+    elif stage_name == "face_swap":
+        # Face swap stage: requires GPU + ComfyUI or ReActor
+        raise HTTPException(400, "Face swap requires GPU + ComfyUI/ReActor. Please install first.")
+
+    elif stage_name == "lip_sync":
+        # Lip sync stage: requires GPU + LatentSync
+        raise HTTPException(400, "Lip sync requires GPU + LatentSync. Please install first.")
+
+    else:
+        # Placeholder for other stages
+        raise HTTPException(400, f"Stage '{stage_name}' is not implemented yet")
+
+    stage.completed_at = datetime.utcnow()
+    stage.duration_seconds = (stage.completed_at - stage.started_at).total_seconds() if stage.started_at else 0
     await db.commit()
 
     return {

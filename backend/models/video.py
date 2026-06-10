@@ -40,6 +40,7 @@ VIDEO_PIPELINE_STAGES = [
     "face_swap",          # 换脸
     "lip_sync",           # 唇形同步
     "dedup",              # 去重处理
+    "overlay_stickers",   # 叠加动态贴纸+新字幕样式
 ]
 
 STAGE_DISPLAY_NAMES = {
@@ -48,6 +49,7 @@ STAGE_DISPLAY_NAMES = {
     "face_swap": "换脸",
     "lip_sync": "唇形同步",
     "dedup": "去重处理",
+    "overlay_stickers": "叠加贴纸+字幕",
 }
 
 

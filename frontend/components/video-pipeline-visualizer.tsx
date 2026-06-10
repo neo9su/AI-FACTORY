@@ -37,6 +37,11 @@ const STAGE_META: Record<string, { emoji: string; color: string; desc: string }>
     color: 'from-green-400 to-emerald-500',
     desc: '去重处理：画中画 + 光扫 + BGM + 帧重生成',
   },
+  overlay_stickers: {
+    emoji: '🎨',
+    color: 'from-yellow-400 to-orange-500',
+    desc: '叠加动态贴纸 + 新字幕样式（右上角标 + 卖点高亮）',
+  },
 };
 
 function StageStatusIcon({ status }: { status: string }) {
