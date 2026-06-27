@@ -721,8 +721,8 @@ async def run_pipeline_stage(
         cmd = [
             "ffmpeg", "-y", "-i", input_video, "-i", audio_path,
             "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
-            "-map", "0:v:0", "-map", "1:a:0",
-            "-shortest", output_video,
+            "-map", "0:v:0", "-map", "1:a:0", "-map", "0:a:0?",
+            output_video,
         ]
         import subprocess
         result = subprocess.run(cmd, capture_output=True, text=True)
