@@ -16,7 +16,7 @@ Config JSON format (stored in stage.params):
   "dedup_name": "小登好物推荐去重",
   "color_temp": 0.02,
   "saturation": 1.05,
-  "brightness": 1.01,
+  "brightness": 0.02,
   "contrast": 1.02,
   "speed_variation": 0.02,
   "pixel_shift": 1,
@@ -52,7 +52,7 @@ class DedupConfig:
     # Color grading
     color_temp: float = 0.02       # ±0.05 warmth shift
     saturation: float = 1.05       # ±1.05 saturation (1.0 = no change)
-    brightness: float = 1.01       # ±0.02 brightness offset
+    brightness: float = 0.02       # ±0.02 brightness offset (FFmpeg eq additive -1.0~1.0, 0=no change)
     contrast: float = 1.02         # ±1.02 contrast
 
     # Speed ramping

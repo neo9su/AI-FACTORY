@@ -155,7 +155,7 @@ class DedupConfigModel(BaseModel):
     dedup_name: str = "去重处理"
     color_temp: float = 0.02
     saturation: float = 1.05
-    brightness: float = 1.01
+    brightness: float = 0.02
     contrast: float = 1.02
     speed_variation: float = 0.02
     pixel_shift: int = 1
