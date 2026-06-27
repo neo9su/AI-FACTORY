@@ -744,7 +744,12 @@ async def run_pipeline_stage(
             stage.error_log = result.stderr[:500]
 
     elif stage_name == "face_swap":
-        from backend.core.face_swap import face_swap_video
+        # Determine swap mode: "simple" (default) or "smart" (embedding-based multi-person)
+        config = stage.params or {}
+        if isinstance(config, str):
+            config = json.loads(config)
+        swap_mode = config.get("swap_mode", "simple")
+
         # Input: source file or latest asset
         result = await db.execute(
             select(VideoAsset)
@@ -761,24 +766,39 @@ async def run_pipeline_stage(
             Path(input_video).stem + "_faceswapped" + Path(input_video).suffix
         ))
 
-        # Get reference face config from stage params
-        config = stage.params or {}
-        if isinstance(config, str):
-            config = json.loads(config)
-        ref_image = config.get("ref_image", "")
+        if swap_mode == "smart":
+            from backend.core.smart_swap import smart_swap_video
+            swap_config = config.get("swap_config", {})
+            if not swap_config:
+                raise HTTPException(400, "swap_config required in stage.params when swap_mode='smart'. "
+                                          "See backend/core/smart_swap.py for format.")
 
-        if not ref_image or not os.path.exists(ref_image):
-            raise HTTPException(400, "ref_image required in stage.params. Set ref_image path before running face_swap.")
+            logging.getLogger(__name__).info(
+                "Starting smart_swap: input=%s mode=%s identities=%s",
+                input_video, swap_config.get("mode", "multi"),
+                list(swap_config.get("source_faces", {}).keys())
+            )
 
-        logging.getLogger(__name__).info(
-            "Starting face_swap: input=%s ref=%s", input_video, ref_image
-        )
+            res = smart_swap_video(
+                input_video=input_video,
+                output_video=output_video,
+                swap_config=swap_config,
+            )
+        else:
+            from backend.core.face_swap import face_swap_video
+            ref_image = config.get("ref_image", "")
+            if not ref_image or not os.path.exists(ref_image):
+                raise HTTPException(400, "ref_image required in stage.params. Set ref_image path before running face_swap.")
 
-        res = face_swap_video(
-            input_video=input_video,
-            output_video=output_video,
-            ref_image_path=ref_image,
-        )
+            logging.getLogger(__name__).info(
+                "Starting face_swap: input=%s ref=%s", input_video, ref_image
+            )
+
+            res = face_swap_video(
+                input_video=input_video,
+                output_video=output_video,
+                ref_image_path=ref_image,
+            )
 
         if res.get("success"):
             stage.status = StageStatus.COMPLETED
