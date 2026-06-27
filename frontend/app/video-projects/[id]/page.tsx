@@ -44,6 +44,7 @@ export default function VideoProjectDetailPage() {
   const [watermarkProgress, setWatermarkProgress] = useState<{progress: number; status: string; current_frame?: number; total_frames?: number} | null>(null);
   const [watermarkConfig, setWatermarkConfig] = useState<Record<string, unknown> | null>(null);
   const [dedupConfig, setDedupConfig] = useState<Record<string, unknown> | null>(null);
+  const [faceSwapConfig, setFaceSwapConfig] = useState<Record<string, unknown> | null>(null);
   const [previewFrames, setPreviewFrames] = useState<Array<{segment_index: number; time_seconds: number; filepath: string; filename: string}> | null>(null);
   const [ocrTime, setOcrTime] = useState(1);
   const [ocrResults, setOcrResults] = useState(null);
@@ -68,6 +69,12 @@ export default function VideoProjectDetailPage() {
       try {
         const dc = await videoProjectsApi.getDedupConfig(projectId);
         setDedupConfig(dc.params);
+        try {
+          const fs = await videoProjectsApi.getFaceSwapConfig(projectId);
+          setFaceSwapConfig(fs.params);
+        } catch {
+          // face swap config is optional
+        }
       } catch {}
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载失败');
@@ -214,6 +221,17 @@ export default function VideoProjectDetailPage() {
     try {
       await videoProjectsApi.saveDedupConfig(projectId, config);
       alert('✅ 去重配置已保存');
+      await fetchProject();
+    } catch (err) {
+      alert('保存失败: ' + (err instanceof Error ? err.message : JSON.stringify(err)));
+    }
+  };
+
+  const handleSaveFaceSwapConfig = async (config: Record<string, unknown>) => {
+    if (!project) return;
+    try {
+      await videoProjectsApi.saveFaceSwapConfig(projectId, config);
+      alert('✅ 换脸配置已保存');
       await fetchProject();
     } catch (err) {
       alert('保存失败: ' + (err instanceof Error ? err.message : JSON.stringify(err)));
@@ -453,6 +471,8 @@ export default function VideoProjectDetailPage() {
               watermarkProgress={watermarkProgress}
               dedupConfig={dedupConfig || undefined}
               onSaveDedupConfig={handleSaveDedupConfig}
+              faceSwapConfig={faceSwapConfig || undefined}
+              onSaveFaceSwapConfig={handleSaveFaceSwapConfig}
               projectId={projectId}
             />
           </div>

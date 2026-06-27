@@ -358,6 +358,60 @@ async def _init_stages(project: VideoProject, db: AsyncSession) -> None:
 # ─── API Routes ──────────────────────────────────────────────────────────────
 
 
+@router.put("/video-projects/{project_id}/stage-config/face_swap")
+async def update_face_swap_config(
+    project_id: str,
+    config: dict,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Save face swap configuration (swap_mode + swap_config) for a project."""
+    result = await db.execute(
+        select(VideoPipelineStage)
+        .where(
+            VideoPipelineStage.project_id == project_id,
+            VideoPipelineStage.stage_name == "face_swap",
+        )
+    )
+    stage = result.scalar_one_or_none()
+    if not stage:
+        raise HTTPException(404, "face_swap stage not found")
+
+    existing = stage.params or {}
+    if isinstance(existing, str):
+        existing = json.loads(existing)
+    existing.update(config)
+    stage.params = existing
+    await db.commit()
+
+    swap_mode = config.get("swap_mode", existing.get("swap_mode", "simple"))
+    return {
+        "message": "Face swap config saved",
+        "swap_mode": swap_mode,
+    }
+
+
+@router.get("/video-projects/{project_id}/stage-config/face_swap")
+async def get_face_swap_config(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Get face swap configuration for a project."""
+    result = await db.execute(
+        select(VideoPipelineStage)
+        .where(
+            VideoPipelineStage.project_id == project_id,
+            VideoPipelineStage.stage_name == "face_swap",
+        )
+    )
+    stage = result.scalar_one_or_none()
+    if not stage:
+        raise HTTPException(404, "face_swap stage not found")
+    return {
+        "message": "Face swap config retrieved",
+        "params": stage.params or {},
+    }
+
+
 @router.post("/video-projects", response_model=VideoProjectResponse)
 async def create_video_project(
     title: str = Form(...),

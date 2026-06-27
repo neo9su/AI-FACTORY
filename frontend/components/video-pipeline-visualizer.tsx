@@ -17,6 +17,9 @@ interface PipelineVisualizerProps {
   dedupConfig?: Record<string, unknown>;
   onSaveDedupConfig?: (config: Record<string, unknown>) => void;
   dedupProgress?: {progress?: number; status?: string} | null;
+  projectId?: string;
+  faceSwapConfig?: Record<string, unknown>;
+  onSaveFaceSwapConfig?: (config: Record<string, unknown>) => void;
 }
 
 const STAGE_META: Record<string, { emoji: string; color: string; desc: string }> = {
@@ -33,7 +36,7 @@ const STAGE_META: Record<string, { emoji: string; color: string; desc: string }>
   face_swap: {
     emoji: '🔄',
     color: 'from-orange-400 to-red-500',
-    desc: '精准人脸替换，自然无违和',
+    desc: '精准人脸替换，支持单人或多人身份匹配',
   },
   lip_sync: {
     emoji: '👄',
@@ -82,6 +85,8 @@ export default function PipelineVisualizer({
   onSaveDedupConfig,
   dedupProgress,
   projectId,
+  faceSwapConfig,
+  onSaveFaceSwapConfig,
 }: PipelineVisualizerProps) {
   const [wmForm, setWmForm] = useState({
     name: (watermarkConfig?.watermark_name as string) || "",
@@ -96,6 +101,13 @@ export default function PipelineVisualizer({
     speed_variation: (dedupConfig?.speed_variation as number) ?? 0.02,
     pixel_shift: (dedupConfig?.pixel_shift as number) ?? 1,
     noise_level: (dedupConfig?.noise_level as number) ?? 0.001,
+  });
+  const [fsForm, setFsForm] = useState({
+    swapMode: (faceSwapConfig?.swap_mode as string) || "simple",
+    faceSrc1: (faceSwapConfig?.source_faces as Record<string, string>)?.["person1"] || "",
+    faceSrc2: (faceSwapConfig?.source_faces as Record<string, string>)?.["person2"] || "",
+    refFrame1: (faceSwapConfig?.ref_frames as Record<string, string>)?.["person1"] || "",
+    refFrame2: (faceSwapConfig?.ref_frames as Record<string, string>)?.["person2"] || "",
   });
   const [expandedStage, setExpandedStage] = useState<string | null>(null);
 
@@ -344,6 +356,136 @@ export default function PipelineVisualizer({
                 </div>
               )}
 
+              {/* Face Swap Config (expanded) */}
+              {isExpanded && stage.stage_name === 'face_swap' && (
+                <div className="border-t border-gray-100 px-4 py-3 bg-white rounded-b-xl">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3">🔄 换脸参数配置</h4>
+
+                  {/* Swap mode selector */}
+                  <div className="mb-4">
+                    <label className="block text-gray-600 mb-1 text-sm">换脸模式</label>
+                    <div className="flex space-x-3">
+                      <label className={`flex items-center px-4 py-2 rounded-lg border cursor-pointer text-sm ${
+                        fsForm.swapMode === 'simple'
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-gray-300 text-gray-600'
+                      }`}>
+                        <input type="radio" name="swapMode" value="simple"
+                          checked={fsForm.swapMode === 'simple'}
+                          onChange={() => setFsForm(f => ({...f, swapMode: 'simple'}))}
+                          className="mr-2" />
+                        简单模式<br/><span className="text-[10px] text-gray-400">单人换脸，一张源图</span>
+                      </label>
+                      <label className={`flex items-center px-4 py-2 rounded-lg border cursor-pointer text-sm ${
+                        fsForm.swapMode === 'smart'
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-gray-300 text-gray-600'
+                      }`}>
+                        <input type="radio" name="swapMode" value="smart"
+                          checked={fsForm.swapMode === 'smart'}
+                          onChange={() => setFsForm(f => ({...f, swapMode: 'smart'}))}
+                          className="mr-2" />
+                        智能模式<br/><span className="text-[10px] text-gray-400">多人身份匹配 (embedding)</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {fsForm.swapMode === 'smart' && (
+                    <div className="space-y-4">
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">
+                        💡 智能模式需要先运行 <code className="bg-amber-100 px-1 rounded">find_best_reference_frames.py</code>
+                        对视频进行身份聚类，然后设置以下路径：
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <label className="block text-gray-600 mb-1">Person 1 换脸源图路径</label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs font-mono"
+                            placeholder="/tmp/face_gen_p1_crop768.jpg"
+                            value={fsForm.faceSrc1}
+                            onChange={(e) => setFsForm(f => ({...f, faceSrc1: e.target.value}))} />
+                        </div>
+                        <div>
+                          <label className="block text-gray-600 mb-1">Person 2 换脸源图路径</label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs font-mono"
+                            placeholder="/tmp/face_gen_p2_crop768.jpg"
+                            value={fsForm.faceSrc2}
+                            onChange={(e) => setFsForm(f => ({...f, faceSrc2: e.target.value}))} />
+                        </div>
+                        <div>
+                          <label className="block text-gray-600 mb-1">Person 1 参考帧路径</label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs font-mono"
+                            placeholder="/tmp/young_ref.jpg"
+                            value={fsForm.refFrame1}
+                            onChange={(e) => setFsForm(f => ({...f, refFrame1: e.target.value}))} />
+                        </div>
+                        <div>
+                          <label className="block text-gray-600 mb-1">Person 2 参考帧路径</label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs font-mono"
+                            placeholder="/tmp/older_ref.jpg"
+                            value={fsForm.refFrame2}
+                            onChange={(e) => setFsForm(f => ({...f, refFrame2: e.target.value}))} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {fsForm.swapMode === 'simple' && (
+                    <div className="text-sm text-gray-500 bg-gray-50 rounded-lg p-3">
+                      简单模式：上传一张参考人脸图，所有检测到的人脸均替换为该图。
+                      请通过"上传参考人脸"按钮上传。
+                    </div>
+                  )}
+
+                  {onSaveFaceSwapConfig && (
+                    <div className="mt-4">
+                      <button
+                        onClick={() => {
+                          if (fsForm.swapMode === 'smart') {
+                            onSaveFaceSwapConfig({
+                              swap_mode: 'smart',
+                              swap_config: {
+                                mode: 'multi',
+                                source_faces: {
+                                  person1: fsForm.faceSrc1,
+                                  person2: fsForm.faceSrc2,
+                                },
+                                ref_frames: {
+                                  person1: fsForm.refFrame1,
+                                  person2: fsForm.refFrame2,
+                                },
+                                similarity_threshold: 0.35,
+                              },
+                            });
+                          } else {
+                            onSaveFaceSwapConfig({ swap_mode: 'simple' });
+                          }
+                        }}
+                        className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        💾 保存换脸配置
+                      </button>
+                    </div>
+                  )}
+
+                  {stage.output_asset && (
+                    <div className="mt-4 pt-4 border-t border-gray-200">
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">输出文件</h4>
+                      <p className="text-sm text-gray-600">{stage.output_asset.filename}</p>
+                      {stage.output_asset.file_size_bytes && (
+                        <p className="text-xs text-gray-500">大小: {(stage.output_asset.file_size_bytes / (1024 * 1024)).toFixed(1)} MB</p>
+                      )}
+                    </div>
+                  )}
+                  {stage.error_log && (
+                    <div className="mt-4 pt-4 border-t border-red-200">
+                      <h4 className="text-sm font-medium text-red-700 mb-2">错误信息</h4>
+                      <pre className="text-xs text-red-600 whitespace-pre-wrap bg-red-50 p-2 rounded">{stage.error_log}</pre>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Dedup Config (expanded) */}
               {isExpanded && stage.stage_name === 'dedup' && (
                 <div className="border-t border-gray-100 px-4 py-3 bg-white rounded-b-xl">
@@ -446,7 +588,7 @@ export default function PipelineVisualizer({
               )}
 
               {/* Other stages: expanded details */}
-              {isExpanded && stage.stage_name !== 'remove_watermark' && stage.output_asset && (
+              {isExpanded && stage.stage_name !== 'remove_watermark' && stage.stage_name !== 'dedup' && stage.stage_name !== 'face_swap' && stage.output_asset && (
                 <div className="border-t border-gray-100 px-4 py-3 bg-gray-50 rounded-b-xl">
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>

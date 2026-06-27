@@ -479,6 +479,22 @@ export const videoProjectsApi = {
     const response = await api.get(`/video-projects/${id}/stage-config/remove_watermark`);
     return response.data;
   },
+  saveFaceSwapConfig: async (id: string, config: Record<string, unknown>): Promise<{
+    message: string;
+    swap_mode: string;
+  }> => {
+    const response = await api.put(`/video-projects/${id}/stage-config/face_swap`, config);
+    return response.data;
+  },
+
+  getFaceSwapConfig: async (id: string): Promise<{
+    project_id: string;
+    params: Record<string, unknown>;
+    status: string;
+  }> => {
+    const response = await api.get(`/video-projects/${id}/stage-config/face_swap`);
+    return response.data;
+  },
 
   getWatermarkPreviewFrames: async (id: string): Promise<{
     project_id: string;
