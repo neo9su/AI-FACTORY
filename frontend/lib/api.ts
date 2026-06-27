@@ -1,10 +1,10 @@
 import axios, { type AxiosInstance } from 'axios';
 import type { TopOpportunityItem, ProductStatsResponse } from '@/types/neurotrend';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 const api: AxiosInstance = axios.create({
-  baseURL: `${API_URL}/api/v1`,
+  baseURL: API_URL ? `${API_URL}/api/v1` : '/api/v1',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -400,6 +400,106 @@ export const videoProjectsApi = {
     if (assetType) queryParams.set('asset_type', assetType);
     const qs = queryParams.toString();
     const response = await api.get<VideoAsset[]>(`/video-projects/${id}/assets${qs ? `?${qs}` : ''}`);
+    return response.data;
+  },
+
+  getFaceSwapProgress: async (id: string): Promise<{
+    progress: number;
+    status: string;
+    current_frame: number;
+    total_frames: number;
+    swapped_frames: number;
+  }> => {
+    const response = await api.get(`/video-projects/${id}/face-swap-progress`);
+    return response.data;
+  },
+
+  uploadFace: async (id: string, file: File): Promise<{ message: string; filepath: string }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post(`/video-projects/${id}/upload-face`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  ocrFrame: async (id: string, timeSeconds: number, enhance?: boolean): Promise<{
+    results: Array<{ text: string; confidence: number; bbox: number[][]; position: number[] }>;
+    frame_time: number;
+  }> => {
+    const response = await api.post(`/video-projects/${id}/ocr-frame?time_seconds=${timeSeconds}&enhance=${enhance ?? true}`);
+    return response.data;
+  },
+
+  verifyWatermark: async (id: string, timeSeconds?: number): Promise<{
+    has_text: boolean;
+    results: Array<{ text: string; confidence: number; position: number[] }>;
+    zone: number[];
+  }> => {
+    const response = await api.post(`/video-projects/${id}/verify-watermark?time_seconds=${timeSeconds ?? 1}`);
+    return response.data;
+  },
+
+  // ─── Watermark Config & Progress ──────────────────────────────────────
+
+  saveWatermarkConfig: async (id: string, config: Record<string, unknown>): Promise<{
+    message: string;
+    watermark_name: string;
+    movement_type: string;
+    segments: number;
+  }> => {
+    const response = await api.put(`/video-projects/${id}/stage-config/remove_watermark`, config);
+    return response.data;
+  },
+
+  saveDedupConfig: async (id: string, config: Record<string, unknown>): Promise<{
+    message: string;
+    dedup_name: string;
+    saturation: number;
+    noise_level: number;
+  }> => {
+    const response = await api.put(`/video-projects/${id}/stage-config/dedup`, config);
+    return response.data;
+  },
+
+  getDedupConfig: async (id: string): Promise<{
+    project_id: string;
+    params: Record<string, unknown>;
+    status: string;
+  }> => {
+    const response = await api.get(`/video-projects/${id}/stage-config/dedup`);
+    return response.data;
+  },
+
+  getWatermarkConfig: async (id: string): Promise<{
+    project_id: string;
+    params: Record<string, unknown>;
+    status: string;
+  }> => {
+    const response = await api.get(`/video-projects/${id}/stage-config/remove_watermark`);
+    return response.data;
+  },
+
+  getWatermarkPreviewFrames: async (id: string): Promise<{
+    project_id: string;
+    duration: number;
+    segments: number;
+    segment_duration: number;
+    frames: Array<{ segment_index: number; time_seconds: number; filepath: string; filename: string }>;
+  }> => {
+    const response = await api.post(`/video-projects/${id}/watermark-preview-frames`);
+    return response.data;
+  },
+
+  getWatermarkProgress: async (id: string): Promise<{
+    progress: number;
+    status: string;
+    current_frame: number;
+    total_frames: number;
+    frames_processed: number;
+    error: string;
+  }> => {
+    const response = await api.get(`/video-projects/${id}/watermark-progress`);
     return response.data;
   },
 };

@@ -121,6 +121,158 @@ class StageRunResponse(BaseModel):
 # ─── Helper Functions ────────────────────────────────────────────────────────
 
 
+
+class WatermarkWaypoint(BaseModel):
+    """Single waypoint in a watermark trajectory."""
+    t: float
+    x: int
+    y: int
+
+class WatermarkSegment(BaseModel):
+    """A time segment with trajectory waypoints."""
+    start: float
+    end: float
+    waypoints: list[WatermarkWaypoint] = []
+    w: int = 100
+    h: int = 30
+    subtitle_safe: bool = False
+
+class WatermarkConfig(BaseModel):
+    """Configuration for watermark removal stage."""
+    watermark_name: str = ""
+    watermark_type: str = "text"
+    movement_type: str = "moving"
+    trajectory_description: str = ""
+    subtitle_zone: dict = {"y1": 710, "y2": 745}
+    segments: list[WatermarkSegment] = []
+    analysis_status: str = "not_started"
+    analysis_result: str = ""
+
+class DedupConfigModel(BaseModel):
+    """Configuration for dedup stage."""
+    dedup_name: str = "去重处理"
+    color_temp: float = 0.02
+    saturation: float = 1.05
+    brightness: float = 1.01
+    contrast: float = 1.02
+    speed_variation: float = 0.02
+    pixel_shift: int = 1
+    noise_level: float = 0.001
+    dither: bool = True
+    bgm_replace: bool = False
+    bgm_volume: float = 0.3
+    bgm_source: Optional[str] = None
+    strip_metadata: bool = True
+    preset: str = "fast"
+    crf: int = 23
+
+
+
+@router.put("/video-projects/{project_id}/stage-config/remove_watermark")
+async def update_watermark_config(
+    project_id: str,
+    config: WatermarkConfig,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Save watermark removal configuration for a project."""
+    result = await db.execute(
+        select(VideoPipelineStage)
+        .where(
+            VideoPipelineStage.project_id == project_id,
+            VideoPipelineStage.stage_name == "remove_watermark",
+        )
+    )
+    stage = result.scalar_one_or_none()
+    if not stage:
+        raise HTTPException(404, "remove_watermark stage not found")
+
+    existing = stage.params or {}
+    existing.update(config.model_dump())
+    stage.params = existing
+    await db.commit()
+    return {
+        "message": "Watermark config saved",
+        "watermark_name": config.watermark_name,
+        "movement_type": config.movement_type,
+        "segments": len(config.segments),
+    }
+
+
+@router.get("/video-projects/{project_id}/stage-config/remove_watermark")
+async def get_watermark_config(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Get current watermark removal configuration."""
+    result = await db.execute(
+        select(VideoPipelineStage)
+        .where(
+            VideoPipelineStage.project_id == project_id,
+            VideoPipelineStage.stage_name == "remove_watermark",
+        )
+    )
+    stage = result.scalar_one_or_none()
+    if not stage:
+        raise HTTPException(404, "remove_watermark stage not found")
+    return {
+        "project_id": project_id,
+        "params": stage.params or {},
+        "status": stage.status,
+    }
+
+
+@router.put("/video-projects/{project_id}/stage-config/dedup")
+async def update_dedup_config(
+    project_id: str,
+    config: DedupConfigModel,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Save dedup configuration for a project."""
+    result = await db.execute(
+        select(VideoPipelineStage)
+        .where(
+            VideoPipelineStage.project_id == project_id,
+            VideoPipelineStage.stage_name == "dedup",
+        )
+    )
+    stage = result.scalar_one_or_none()
+    if not stage:
+        raise HTTPException(404, "dedup stage not found")
+
+    existing = stage.params or {}
+    existing.update(config.model_dump())
+    stage.params = existing
+    await db.commit()
+    return {
+        "message": "Dedup config saved",
+        "dedup_name": config.dedup_name,
+        "saturation": config.saturation,
+        "noise_level": config.noise_level,
+    }
+
+
+@router.get("/video-projects/{project_id}/stage-config/dedup")
+async def get_dedup_config(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Get current dedup configuration."""
+    result = await db.execute(
+        select(VideoPipelineStage)
+        .where(
+            VideoPipelineStage.project_id == project_id,
+            VideoPipelineStage.stage_name == "dedup",
+        )
+    )
+    stage = result.scalar_one_or_none()
+    if not stage:
+        raise HTTPException(404, "dedup stage not found")
+    return {
+        "project_id": project_id,
+        "params": stage.params or {},
+        "status": stage.status,
+    }
+
 def _project_to_detail(project: VideoProject) -> dict[str, Any]:
     """Convert project ORM to detail dict with stages and assets."""
     return {
@@ -374,7 +526,61 @@ async def run_pipeline_stage(
     await db.commit()
 
     # Execute stage
-    if stage_name == "overlay_stickers":
+    if stage_name == "remove_watermark":
+        from backend.core.video_effects.moving_watermark_remover import process_video
+        # Input: source file or latest asset
+        result = await db.execute(
+            select(VideoAsset)
+            .where(VideoAsset.project_id == project_id)
+            .order_by(VideoAsset.created_at.desc())
+        )
+        last_asset = result.scalars().first()
+        input_video = last_asset.filepath if last_asset else project.source_filepath or ""
+
+        if not input_video or not os.path.exists(input_video):
+            raise HTTPException(400, "No input video available for watermark removal")
+
+        output_video = str(Path(input_video).with_name(
+            Path(input_video).stem + "_clean" + Path(input_video).suffix
+        ))
+
+        # Use stage params as config (set via detect-watermark API)
+        config = stage.params or {}
+        if isinstance(config, str):
+            config = json.loads(config)
+
+        import logging
+        logging.getLogger(__name__).info(
+            "Starting remove_watermark with config: name=%s segments=%d",
+            config.get("watermark_name", "?"), len(config.get("segments", []))
+        )
+
+        res = process_video(
+            input_path=input_video,
+            output_path=output_video,
+            config=config,
+        )
+
+        if res.get("success"):
+            stage.status = StageStatus.COMPLETED
+            stage.output_filepath = output_video
+            stage.output_url = output_video
+            stage.duration_seconds = float(res.get("duration_seconds", 0))
+            asset = VideoAsset(
+                project_id=project_id,
+                filename=Path(output_video).name,
+                filepath=output_video,
+                asset_type="output",
+                source_stage="remove_watermark",
+                duration_seconds=float(res.get("duration_seconds", 0)),
+            )
+            db.add(asset)
+            project.source_filepath = output_video
+        else:
+            stage.status = StageStatus.FAILED
+            stage.error_log = res.get("error", "Unknown error")
+
+    elif stage_name == "overlay_stickers":
         from backend.core.video_effects.overlay import apply_overlay_effects, SubtitleStyle
         # Get latest video asset from previous stage
         result = await db.execute(
@@ -451,16 +657,14 @@ async def run_pipeline_stage(
             Path(input_video).stem + "_dedup" + Path(input_video).suffix
         ))
 
-        config = DedupConfig(
-            color_temp=0.02,
-            saturation=1.05,
-            brightness=1.01,
-            contrast=1.02,
-            speed_variation=0.02,
-            pixel_shift=1,
-            noise_level=0.001,
-            bgm_replace=False,
-            strip_metadata=True,
+        # Read config from stage.params (set via PUT stage-config/dedup)
+        params = stage.params or {}
+        if isinstance(params, str):
+            params = json.loads(params)
+        config = DedupConfig.from_dict(params)
+        logger.info(
+            "Starting dedup with config: name=%s speed=%.3f noise=%.4f",
+            config.dedup_name, config.speed_variation, config.noise_level,
         )
 
         res = apply_dedup_effects(
@@ -539,8 +743,60 @@ async def run_pipeline_stage(
             stage.error_log = result.stderr[:500]
 
     elif stage_name == "face_swap":
-        # Face swap stage: requires GPU + ComfyUI or ReActor
-        raise HTTPException(400, "Face swap requires GPU + ComfyUI/ReActor. Please install first.")
+        from backend.core.face_swap import face_swap_video
+        # Input: source file or latest asset
+        result = await db.execute(
+            select(VideoAsset)
+            .where(VideoAsset.project_id == project_id)
+            .order_by(VideoAsset.created_at.desc())
+        )
+        last_asset = result.scalars().first()
+        input_video = last_asset.filepath if last_asset else project.source_filepath or ""
+
+        if not input_video or not os.path.exists(input_video):
+            raise HTTPException(400, "No input video available for face swap")
+
+        output_video = str(Path(input_video).with_name(
+            Path(input_video).stem + "_faceswapped" + Path(input_video).suffix
+        ))
+
+        # Get reference face config from stage params
+        config = stage.params or {}
+        if isinstance(config, str):
+            config = json.loads(config)
+        ref_image = config.get("ref_image", "")
+
+        if not ref_image or not os.path.exists(ref_image):
+            raise HTTPException(400, "ref_image required in stage.params. Set ref_image path before running face_swap.")
+
+        import logging
+        logging.getLogger(__name__).info(
+            "Starting face_swap: input=%s ref=%s", input_video, ref_image
+        )
+
+        res = face_swap_video(
+            input_video=input_video,
+            output_video=output_video,
+            ref_image_path=ref_image,
+        )
+
+        if res.get("success"):
+            stage.status = StageStatus.COMPLETED
+            stage.output_filepath = output_video
+            stage.output_url = output_video
+            stage.duration_seconds = float(res.get("total_frames", 0) / 30)
+            asset = VideoAsset(
+                project_id=project_id,
+                filename=Path(output_video).name,
+                filepath=output_video,
+                asset_type="output",
+                source_stage="face_swap",
+            )
+            db.add(asset)
+            project.source_filepath = output_video
+        else:
+            stage.status = StageStatus.FAILED
+            stage.error_log = res.get("error", "Unknown face swap error")
 
     elif stage_name == "lip_sync":
         # Lip sync stage: requires GPU + LatentSync

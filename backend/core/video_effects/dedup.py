@@ -1,4 +1,5 @@
-"""Video dedup / re-uniquify effects.
+"""
+Video dedup / re-uniquify effects.
 
 Applies multiple visual transformations to make a video unique on social platforms:
 1. Subtle color grading (slight warmth/saturation shift)
@@ -9,6 +10,25 @@ Applies multiple visual transformations to make a video unique on social platfor
 6. Watermark-free (ensure no watermarks)
 
 All effects applied via ffmpeg pipeline.
+
+Config JSON format (stored in stage.params):
+{
+  "dedup_name": "小登好物推荐去重",
+  "color_temp": 0.02,
+  "saturation": 1.05,
+  "brightness": 1.01,
+  "contrast": 1.02,
+  "speed_variation": 0.02,
+  "pixel_shift": 1,
+  "noise_level": 0.001,
+  "dither": true,
+  "bgm_replace": false,
+  "bgm_volume": 0.3,
+  "bgm_source": null,
+  "strip_metadata": true,
+  "preset": "fast",
+  "crf": 23
+}
 """
 from __future__ import annotations
 
@@ -16,7 +36,6 @@ import json
 import logging
 import os
 import subprocess
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -27,10 +46,13 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DedupConfig:
     """Configuration for video dedup effects."""
+    # Display / identity
+    dedup_name: str = "去重处理"
+
     # Color grading
     color_temp: float = 0.02       # ±0.05 warmth shift
     saturation: float = 1.05       # ±1.05 saturation (1.0 = no change)
-    brightness: float = 1.01       # ±1.01 brightness
+    brightness: float = 1.01       # ±0.02 brightness offset
     contrast: float = 1.02         # ±1.02 contrast
 
     # Speed ramping
@@ -42,7 +64,7 @@ class DedupConfig:
     dither: bool = True
 
     # BGM
-    bgm_replace: bool = True
+    bgm_replace: bool = False
     bgm_volume: float = 0.3
     bgm_source: Optional[str] = None
 
@@ -52,6 +74,37 @@ class DedupConfig:
     # Output
     preset: str = "fast"
     crf: int = 23
+
+    @classmethod
+    def from_dict(cls, data: dict) -> DedupConfig:
+        """Create DedupConfig from a dict (e.g., stage.params).
+
+        Only overrides fields that are present in the dict.
+        All defaults remain the same.
+        """
+        valid_fields = set(cls.__dataclass_fields__.keys())
+        filtered = {k: v for k, v in data.items() if k in valid_fields}
+        return cls(**filtered)
+
+    def to_dict(self) -> dict:
+        """Serialize to dict for API responses."""
+        return {
+            "dedup_name": self.dedup_name,
+            "color_temp": self.color_temp,
+            "saturation": self.saturation,
+            "brightness": self.brightness,
+            "contrast": self.contrast,
+            "speed_variation": self.speed_variation,
+            "pixel_shift": self.pixel_shift,
+            "noise_level": self.noise_level,
+            "dither": self.dither,
+            "bgm_replace": self.bgm_replace,
+            "bgm_volume": self.bgm_volume,
+            "bgm_source": self.bgm_source,
+            "strip_metadata": self.strip_metadata,
+            "preset": self.preset,
+            "crf": self.crf,
+        }
 
 
 def get_video_info(video_path: str) -> dict:
@@ -78,7 +131,7 @@ def get_video_info(video_path: str) -> dict:
             "width": video_stream.get("width", 0) if video_stream else 0,
             "height": video_stream.get("height", 0) if video_stream else 0,
             "duration": float(info.get("format", {}).get("duration", 0)),
-            "fps": eval(video_stream.get("r_frame_rate", "30/1")) if video_stream else 30,
+            "fps": video_stream.get("r_frame_rate", "30/1") if video_stream else "30/1",
             "codec": video_stream.get("codec_name", "unknown") if video_stream else "unknown",
             "has_audio": audio_stream is not None,
             "audio_codec": audio_stream.get("codec_name", "none") if audio_stream else "none",
@@ -141,6 +194,7 @@ def apply_dedup_effects(
         return {"success": False, "error": "Invalid video duration"}
 
     logger.info(f"[Dedup] Processing {input_video} ({width}x{height}, {duration:.1f}s, {fps:.1f}fps)")
+    logger.info(f"[Dedup] Config: {config.to_dict()}")
 
     # Build filter_complex
     vf_parts = []
@@ -156,7 +210,6 @@ def apply_dedup_effects(
 
     # 3. Pixel shift + noise
     if config.pixel_shift > 0:
-        # Subtle pixel shift using pad/crop
         shift = config.pixel_shift
         vf_parts.append(f"crop=iw-{shift*2}:ih-{shift*2}:{shift}:{shift}")
         vf_parts.append(f"scale={width}:{height}")
@@ -165,7 +218,7 @@ def apply_dedup_effects(
     if config.noise_level > 0:
         vf_parts.append(f"noise=alls={config.noise_level}*255:allf=t")
 
-    vf_filter = ":".join(vf_parts)
+    vf_filter = ",".join(vf_parts)
 
     # Build ffmpeg command
     cmd = ["ffmpeg", "-y", "-i", input_video]
@@ -173,7 +226,6 @@ def apply_dedup_effects(
     # Audio handling
     has_audio = video_info.get("has_audio", True)
 
-    # BGM replacement
     if bgm_audio and os.path.exists(bgm_audio):
         cmd.extend(["-i", bgm_audio])
         audio_filter = (
@@ -185,15 +237,22 @@ def apply_dedup_effects(
         cmd.extend(["-filter_complex", audio_filter])
         cmd.extend(["-map", "[a]"])
         cmd.extend(["-c:v", "libx264", "-preset", config.preset, "-crf", str(config.crf)])
+        cmd.extend(["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"])
         cmd.extend(["-vf", vf_filter])
         cmd.extend(["-c:a", "aac", "-b:a", "128k"])
     elif has_audio:
-        cmd.extend(["-filter_complex", f"[0:v]{vf_filter}[v];[0:a]aformat=sample_fmts=fltp:channel_layouts=stereo[a]", "-map", "[v]", "-map", "[a]"])
+        cmd.extend([
+            "-filter_complex",
+            f"[0:v]{vf_filter}[v];[0:a]aformat=sample_fmts=fltp:channel_layouts=stereo[a]",
+            "-map", "[v]", "-map", "[a]"
+        ])
         cmd.extend(["-c:v", "libx264", "-preset", config.preset, "-crf", str(config.crf)])
+        cmd.extend(["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"])
         cmd.extend(["-c:a", "aac", "-b:a", "128k"])
     else:
         cmd.extend(["-vf", vf_filter])
         cmd.extend(["-c:v", "libx264", "-preset", config.preset, "-crf", str(config.crf)])
+        cmd.extend(["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"])
 
     cmd.append(output_video)
 
@@ -204,7 +263,7 @@ def apply_dedup_effects(
             cmd,
             capture_output=True,
             text=True,
-            timeout=1800,  # 30 min max
+            timeout=1800,
         )
         if result.returncode != 0:
             logger.error(f"[Dedup] FFmpeg error: {result.stderr[:500]}")
@@ -241,8 +300,9 @@ def apply_dedup_effects(
 
 if __name__ == "__main__":
     print("✅ Dedup effects module loaded")
+    print(f"   Default config: {DedupConfig().to_dict()}")
     result = subprocess.run(["ffmpeg", "-version"], capture_output=True)
     if result.returncode == 0:
         print("   ✅ ffmpeg available")
     else:
-        print("   ❌ ffmpeg not found — dedup will fail at runtime")
+        print("   ❌ ffmpeg not found")

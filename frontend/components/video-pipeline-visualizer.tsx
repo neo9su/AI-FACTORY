@@ -9,6 +9,14 @@ interface PipelineVisualizerProps {
   onRunStage: (stageName: string) => void;
   onStartPipeline: () => void;
   running: boolean;
+  watermarkConfig?: Record<string, unknown>;
+  onSaveWatermarkConfig?: (config: Record<string, unknown>) => void;
+  onGeneratePreviewFrames?: () => void;
+  previewFrames?: Array<{segment_index: number; time_seconds: number; filepath: string; filename: string}>;
+  watermarkProgress?: {progress: number; status: string; current_frame?: number; total_frames?: number} | null;
+  dedupConfig?: Record<string, unknown>;
+  onSaveDedupConfig?: (config: Record<string, unknown>) => void;
+  dedupProgress?: {progress?: number; status?: string} | null;
 }
 
 const STAGE_META: Record<string, { emoji: string; color: string; desc: string }> = {
@@ -65,7 +73,30 @@ export default function PipelineVisualizer({
   onRunStage,
   onStartPipeline,
   running,
+  watermarkConfig,
+  onSaveWatermarkConfig,
+  onGeneratePreviewFrames,
+  previewFrames,
+  watermarkProgress,
+  dedupConfig,
+  onSaveDedupConfig,
+  dedupProgress,
+  projectId,
 }: PipelineVisualizerProps) {
+  const [wmForm, setWmForm] = useState({
+    name: (watermarkConfig?.watermark_name as string) || "",
+    type: (watermarkConfig?.watermark_type as string) || "text",
+    movement: (watermarkConfig?.movement_type as string) || "moving",
+    description: (watermarkConfig?.trajectory_description as string) || "",
+  });
+  const [dedupForm, setDedupForm] = useState({
+    saturation: (dedupConfig?.saturation as number) ?? 1.05,
+    brightness: (dedupConfig?.brightness as number) ?? 1.01,
+    contrast: (dedupConfig?.contrast as number) ?? 1.02,
+    speed_variation: (dedupConfig?.speed_variation as number) ?? 0.02,
+    pixel_shift: (dedupConfig?.pixel_shift as number) ?? 1,
+    noise_level: (dedupConfig?.noise_level as number) ?? 0.001,
+  });
   const [expandedStage, setExpandedStage] = useState<string | null>(null);
 
   const allPending = stages.every((s) => s.status === 'pending');
@@ -78,6 +109,20 @@ export default function PipelineVisualizer({
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900">管线状态</h3>
         <div className="flex space-x-3">
+          {/* Show "重置并启动全管线" unless all are pending */}
+          {!allPending && !pipelineComplete && !hasFailed && (
+            <button
+              onClick={() => {
+                if (confirm('重置管线会清空所有已完成的阶段，确定继续？')) {
+                  onStartPipeline();
+                }
+              }}
+              disabled={running}
+              className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:bg-gray-300 transition-colors"
+            >
+              {running ? '⏳ 重置中...' : '🔄 重置管线 & 全量执行'}
+            </button>
+          )}
           {allPending && (
             <button
               onClick={onStartPipeline}
@@ -180,8 +225,228 @@ export default function PipelineVisualizer({
                 )}
               </div>
 
-              {/* Expanded Details */}
-              {isExpanded && stage.output_asset && (
+              {/* Watermark Config (remove_watermark only, expanded) */}
+              {isExpanded && stage.stage_name === 'remove_watermark' && (
+                <div className="border-t border-gray-100 px-4 py-3 bg-white rounded-b-xl">
+                  {watermarkProgress && watermarkProgress.status === 'processing' ? (
+                    <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                      <h4 className="text-sm font-semibold text-blue-700 mb-2">⏳ 去水印处理中...</h4>
+                      <div className="flex items-center mb-2">
+                        <div className="flex-1 bg-blue-200 rounded-full h-4 overflow-hidden">
+                          <div className="bg-blue-600 h-full rounded-full transition-all duration-500 ease-in-out" style={{ width: `${Math.min(watermarkProgress.progress, 100)}%` }} />
+                        </div>
+                        <span className="ml-3 text-sm font-medium text-blue-700 min-w-[3rem] text-right">{watermarkProgress.progress}%</span>
+                      </div>
+                      <p className="text-xs text-blue-600">帧 {watermarkProgress.current_frame || 0}/{watermarkProgress.total_frames || 0}</p>
+                    </div>
+                  ) : null}
+
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3">💧 水印配置</h4>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <label className="block text-gray-600 mb-1">水印名称</label>
+                      <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="如: 小登好物推荐" value={wmForm.name} onChange={(e) => setWmForm(f => ({...f, name: e.target.value}))} />
+                    </div>
+                    <div>
+                      <label className="block text-gray-600 mb-1">水印类型</label>
+                      <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wmForm.type} onChange={(e) => setWmForm(f => ({...f, type: e.target.value}))}>
+                        <option value="text">文字</option>
+                        <option value="pattern">图案</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-gray-600 mb-1">运动类型</label>
+                      <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wmForm.movement} onChange={(e) => setWmForm(f => ({...f, movement: e.target.value}))}>
+                        <option value="moving">移动</option>
+                        <option value="static">固定</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-gray-600 mb-1">轨迹描述</label>
+                      <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="如: 从左进→右下→出屏→从右进→左下" value={wmForm.description} onChange={(e) => setWmForm(f => ({...f, description: e.target.value}))} />
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex items-center space-x-3">
+                    <button
+                      onClick={() => {
+                        if (onSaveWatermarkConfig) {
+                          onSaveWatermarkConfig({
+                            watermark_name: wmForm.name,
+                            watermark_type: wmForm.type,
+                            movement_type: wmForm.movement,
+                            trajectory_description: wmForm.description,
+                            subtitle_zone: { y1: 710, y2: 745 },
+                            segments: watermarkConfig?.segments || [],
+                          });
+                        }
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      💾 保存配置
+                    </button>
+                    {onGeneratePreviewFrames && (
+                      <button
+                        onClick={onGeneratePreviewFrames}
+                        className="px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors"
+                      >
+                        🖼️ 生成预览帧
+                      </button>
+                    )}
+                  </div>
+
+                  {previewFrames && previewFrames.length > 0 && (
+                    <div className="mt-4">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">分段预览帧（{previewFrames.length}张）</h4>
+                      <p className="text-xs text-gray-500 mb-2">每段的首帧，可拖动标注水印位置（轨迹点：时间t + 坐标x,y）</p>
+                      <div className="grid grid-cols-5 gap-2">
+                        {previewFrames.map((f, i) => (
+                          <div key={i} className="border border-gray-200 rounded-lg p-1 bg-white text-center">
+                            <img
+                              src={`/api/v1/video-projects/${projectId}/watermark-preview/${encodeURIComponent(f.filename)}`}
+                              alt={`Frame at ${f.time_seconds}s`}
+                              className="w-full h-20 object-cover rounded bg-gray-100"
+                              loading="lazy"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = "none";
+                                const p = (e.target as HTMLImageElement).parentElement;
+                                if (p) {
+                                  const div = document.createElement("div");
+                                  div.className = "bg-gray-100 rounded h-20 flex items-center justify-center text-xs text-gray-400";
+                                  div.textContent = "❌";
+                                  p.appendChild(div);
+                                }
+                              }}
+                            />
+                            <p className="text-[10px] text-gray-500 mt-1">{f.time_seconds.toFixed(1)}s</p>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-gray-400 mt-2">💡 预览帧可用于标记水印位置，然后通过 API 配置轨迹点</p>
+                    </div>
+                  )}
+
+                  {stage.output_asset && (
+                    <div className="mt-4 pt-4 border-t border-gray-200">
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">输出文件</h4>
+                      <p className="text-sm text-gray-600">{stage.output_asset.filename}</p>
+                      {stage.output_asset.file_size_bytes && (
+                        <p className="text-xs text-gray-500">大小: {(stage.output_asset.file_size_bytes / (1024 * 1024)).toFixed(1)} MB</p>
+                      )}
+                    </div>
+                  )}
+                  {stage.error_log && (
+                    <div className="mt-4 pt-4 border-t border-red-200">
+                      <h4 className="text-sm font-medium text-red-700 mb-2">错误信息</h4>
+                      <pre className="text-xs text-red-600 whitespace-pre-wrap bg-red-50 p-2 rounded">{stage.error_log}</pre>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Dedup Config (expanded) */}
+              {isExpanded && stage.stage_name === 'dedup' && (
+                <div className="border-t border-gray-100 px-4 py-3 bg-white rounded-b-xl">
+                  {dedupProgress && dedupProgress.status === 'processing' && (
+                    <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                      <h4 className="text-sm font-semibold text-blue-700 mb-2">⏳ 去重处理中...</h4>
+                      <div className="flex items-center mb-2">
+                        <div className="flex-1 bg-blue-200 rounded-full h-4 overflow-hidden">
+                          <div className="bg-blue-600 h-full rounded-full transition-all duration-500 ease-in-out"
+                            style={{ width: `${Math.min(dedupProgress.progress || 0, 100)}%` }} />
+                        </div>
+                        <span className="ml-3 text-sm font-medium text-blue-700 min-w-[3rem] text-right">
+                          {dedupProgress.progress || 0}%
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3">✨ 去重参数配置</h4>
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <label className="block text-gray-600 mb-1">饱和度 <span className="text-xs text-gray-400">({dedupForm.saturation.toFixed(2)})</span></label>
+                      <input type="range" min="0.95" max="1.15" step="0.01" className="w-full"
+                        value={dedupForm.saturation}
+                        onChange={(e) => setDedupForm(f => ({...f, saturation: parseFloat(e.target.value)}))} />
+                    </div>
+                    <div>
+                      <label className="block text-gray-600 mb-1">亮度 <span className="text-xs text-gray-400">({dedupForm.brightness.toFixed(2)})</span></label>
+                      <input type="range" min="0.95" max="1.05" step="0.01" className="w-full"
+                        value={dedupForm.brightness}
+                        onChange={(e) => setDedupForm(f => ({...f, brightness: parseFloat(e.target.value)}))} />
+                    </div>
+                    <div>
+                      <label className="block text-gray-600 mb-1">对比度 <span className="text-xs text-gray-400">({dedupForm.contrast.toFixed(2)})</span></label>
+                      <input type="range" min="0.95" max="1.10" step="0.01" className="w-full"
+                        value={dedupForm.contrast}
+                        onChange={(e) => setDedupForm(f => ({...f, contrast: parseFloat(e.target.value)}))} />
+                    </div>
+                    <div>
+                      <label className="block text-gray-600 mb-1">速度微调 <span className="text-xs text-gray-400">({(dedupForm.speed_variation*100).toFixed(0)}%)</span></label>
+                      <input type="range" min="0" max="0.10" step="0.005" className="w-full"
+                        value={dedupForm.speed_variation}
+                        onChange={(e) => setDedupForm(f => ({...f, speed_variation: parseFloat(e.target.value)}))} />
+                    </div>
+                    <div>
+                      <label className="block text-gray-600 mb-1">像素偏移</label>
+                      <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        value={dedupForm.pixel_shift}
+                        onChange={(e) => setDedupForm(f => ({...f, pixel_shift: parseInt(e.target.value)}))}>
+                        <option value={0}>0px</option>
+                        <option value={1}>1px</option>
+                        <option value={2}>2px</option>
+                        <option value={3}>3px</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-gray-600 mb-1">噪音注入 <span className="text-xs text-gray-400">(×10⁻³)</span></label>
+                      <input type="range" min="0" max="10" step="1" className="w-full"
+                        value={Math.round(dedupForm.noise_level * 1000)}
+                        onChange={(e) => setDedupForm(f => ({...f, noise_level: parseInt(e.target.value) / 1000}))} />
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <button
+                      onClick={() => {
+                        if (onSaveDedupConfig) {
+                          onSaveDedupConfig({
+                            saturation: dedupForm.saturation,
+                            brightness: dedupForm.brightness,
+                            contrast: dedupForm.contrast,
+                            speed_variation: dedupForm.speed_variation,
+                            pixel_shift: dedupForm.pixel_shift,
+                            noise_level: dedupForm.noise_level,
+                          });
+                        }
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      💾 保存去重配置
+                    </button>
+                  </div>
+
+                  {stage.output_asset && (
+                    <div className="mt-4 pt-4 border-t border-gray-200">
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">输出文件</h4>
+                      <p className="text-sm text-gray-600">{stage.output_asset.filename}</p>
+                      {stage.output_asset.file_size_bytes && (
+                        <p className="text-xs text-gray-500">大小: {(stage.output_asset.file_size_bytes / (1024 * 1024)).toFixed(1)} MB</p>
+                      )}
+                    </div>
+                  )}
+                  {stage.error_log && (
+                    <div className="mt-4 pt-4 border-t border-red-200">
+                      <h4 className="text-sm font-medium text-red-700 mb-2">错误信息</h4>
+                      <pre className="text-xs text-red-600 whitespace-pre-wrap bg-red-50 p-2 rounded">{stage.error_log}</pre>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Other stages: expanded details */}
+              {isExpanded && stage.stage_name !== 'remove_watermark' && stage.output_asset && (
                 <div className="border-t border-gray-100 px-4 py-3 bg-gray-50 rounded-b-xl">
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
