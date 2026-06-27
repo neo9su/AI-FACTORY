@@ -5,6 +5,8 @@ Manages video projects through the content production pipeline:
 """
 from __future__ import annotations
 
+import logging
+
 import os
 from datetime import datetime
 from pathlib import Path
@@ -549,7 +551,6 @@ async def run_pipeline_stage(
         if isinstance(config, str):
             config = json.loads(config)
 
-        import logging
         logging.getLogger(__name__).info(
             "Starting remove_watermark with config: name=%s segments=%d",
             config.get("watermark_name", "?"), len(config.get("segments", []))
@@ -662,7 +663,7 @@ async def run_pipeline_stage(
         if isinstance(params, str):
             params = json.loads(params)
         config = DedupConfig.from_dict(params)
-        logger.info(
+        logging.getLogger(__name__).info(
             "Starting dedup with config: name=%s speed=%.3f noise=%.4f",
             config.dedup_name, config.speed_variation, config.noise_level,
         )
@@ -710,8 +711,8 @@ async def run_pipeline_stage(
         # Generate TTS audio
         tts_service = TTSService()
         script = stage.params.get("script", "这是一个AI生成的视频介绍") if stage.params else "这是一个AI生成的视频介绍"
-        audio_path = f"{Path(input_video).stem}_dub.mp3"
-        tts_service.synthesize(text=script, output_path=audio_path)
+        audio_path = str(Path(input_video).parent / (Path(input_video).stem + "_dub.mp3"))
+        await tts_service.synthesize(text=script, output_path=audio_path)
 
         # Merge audio onto video
         output_video = str(Path(input_video).with_name(
@@ -769,7 +770,6 @@ async def run_pipeline_stage(
         if not ref_image or not os.path.exists(ref_image):
             raise HTTPException(400, "ref_image required in stage.params. Set ref_image path before running face_swap.")
 
-        import logging
         logging.getLogger(__name__).info(
             "Starting face_swap: input=%s ref=%s", input_video, ref_image
         )

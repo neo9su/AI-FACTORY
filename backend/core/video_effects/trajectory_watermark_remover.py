@@ -246,7 +246,7 @@ def process_video(
 
     cap.release()
     out.release()
-    cv2.destroyAllWindows()
+    # cv2.destroyAllWindows() - headless server
 
     logger.info(f"DONE: {frame_count}f, {total_processed} inpaints")
 
